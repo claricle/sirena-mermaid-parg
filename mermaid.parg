@@ -37,6 +37,992 @@ grammar Mermaid version "0.1.0" edition 2 {
   sq_string = "'" *( "\\" ANY / !"'" ANY ) as string "'"
 
   ## ------------------------------------------------------------------
+  ## architecture (grammars/architecture.rb)
+  ## ------------------------------------------------------------------
+
+  architecture_identifier = 1*( ALPHA / DIGIT / "_" / "-" )
+
+  architecture_position = 1*( "L" / "R" / "T" / "B" )
+
+  architecture_text = 1*( !line_end ANY )
+
+  architecture_title = "title" 1*sp architecture_text as title line_end
+
+  architecture_acc_title = "accTitle:" 1*sp architecture_text as acc_title line_end
+
+  architecture_acc_descr = "accDescr:" 1*sp architecture_text as acc_descr line_end
+
+  architecture_acc_descr_block = "accDescr" *sp "{" *( !"}" ANY ) as acc_descr "}" line_end
+
+  architecture_icon = "(" 1*( !")" ANY ) as icon ")"
+
+  architecture_label = "[" 1*( !"]" ANY ) as label "]"
+
+  architecture_in = 1*sp "in" 1*sp architecture_identifier as group_id
+
+  architecture_group = "group" as stmt_type 1*sp architecture_identifier as id [architecture_icon] [architecture_label] [architecture_in as parent] line_end
+
+  architecture_service = "service" as stmt_type 1*sp architecture_identifier as id [architecture_icon] [architecture_label] [architecture_in as group] line_end
+
+  architecture_junction = "junction" as stmt_type 1*sp architecture_identifier as id [architecture_in as group] line_end
+
+  architecture_arrow = "-->" / "--"
+
+  architecture_from_position = ":" architecture_position as pos_value
+
+  architecture_edge = architecture_identifier as from [architecture_from_position as from_pos] *sp architecture_arrow as arrow *sp [architecture_position as to_pos ":"] architecture_identifier as to [*sp ":" *sp architecture_text as label] line_end
+
+  architecture_statement = architecture_title / architecture_acc_title / architecture_acc_descr_block / architecture_acc_descr / architecture_group / architecture_service / architecture_junction / architecture_edge
+
+  architecture = ws "architecture-beta" as header ws [ 1*( architecture_statement ws ) as statements ] ws
+
+  entry architecture: architecture
+
+  test architecture {
+    accept "architecture-beta"
+    accept "architecture-beta\n  group g(cloud)[G]\n  service s(db)[S] in g\n  junction j in g\n  s:L --> R:j : x"
+    reject "architecture-beta\n  bogus"
+  }
+
+  ## ------------------------------------------------------------------
+  ## block (grammars/block.rb)
+  ## ------------------------------------------------------------------
+
+  ## Quoted block ids are left to the Ruby path (its builder keeps their
+  ## tree node, not a string), so a block id here is an identifier only.
+  block_identifier_char = ALPHA / DIGIT / "_"
+
+  block_identifier = ( ALPHA / "_" ) *block_identifier_char
+
+  block_reserved = ( "block" / "end" / "space" ) !block_identifier_char
+
+  block_id = !block_reserved block_identifier
+
+  block_integer = 1*DIGIT
+
+  block_columns = "columns" as columns_keyword sp block_integer as columns_value line_end
+
+  block_style_property = 1*( !line_end !"," ANY )
+
+  block_style_properties = block_style_property *( "," block_style_property )
+
+  block_style = "style" as style_keyword sp block_id as style_target sp block_style_properties as style_props line_end
+
+  block_arrow = "-->" as arrow_type / "---" as line_type
+
+  block_connection = block_id as from *sp block_arrow as arrow *sp block_id as to line_end
+
+  block_space = "space" as space_keyword line_end
+
+  block_arrow_direction = ( "up" / "down" / "left" / "right" ) as direction
+
+  block_arrow_block = block_id as arrow_id "<" as arrow_open "[" *( !"]" ANY ) as arrow_label "]" ">" as arrow_close "(" block_arrow_direction as arrow_direction ")" line_end
+
+  block_width = ":" block_integer
+
+  block_double_circle = "((" as open *( !"))" ANY ) as label "))" as close
+
+  block_rectangle = "[" as open *( !"]" ANY ) as label "]" as close
+
+  block_shape = block_double_circle / block_rectangle
+
+  block_with_shape = block_id as block_id [ *sp block_shape as block_shape ] [ block_width as block_width ] line_end
+
+  block_plain = block_space / block_arrow_block / block_with_shape
+
+  block_compound = "block" as compound_keyword [ ":" block_id as compound_id ] *sp line_end ws [ block_compound_statements as compound_statements ] ws "end" as compound_end line_end
+
+  block_compound_statement = block_compound / block_plain
+
+  block_compound_statements = 1*( block_compound_statement ws )
+
+  block_statement = block_columns / block_style / block_connection / block_compound / block_plain
+
+  block = ws "block-beta" as header ws [ 1*( block_statement ws ) as statements ] ws
+
+  entry block: block
+
+  test block {
+    accept "block-beta"
+    accept "block-beta\n  columns 2\n  A[\"x\"]:2\n  B((y))\n"
+    accept "block-beta\n  block:c\n    D\n  end\n  A --> B\n  style A fill:#f9f"
+    reject "block-beta\n  \"quoted\""
+  }
+
+  ## ------------------------------------------------------------------
+  ## c4 (grammars/c4.rb)
+  ## ------------------------------------------------------------------
+
+  c4_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  c4_variable = "$" "{" c4_identifier as var "}"
+
+  c4_variable_or_identifier = c4_variable / c4_identifier
+
+  c4_macro = "$" "{" c4_identifier "}"
+
+
+  c4_canonical_header = ( "C4Context" / "C4Container" / "C4Component" / "C4Dynamic" / "C4Deployment" ) as header [ "$" "{" c4_identifier "}" / ";" ]
+
+  c4_compatibility_header = "C4 diagram" as header [ "$" "{" c4_identifier "}" / ";" ]
+
+  c4_title = "title" 1*sp 1*( !line_end !"$" ANY ) as title [c4_macro] line_end
+
+  c4_number = 1*DIGIT "." 1*DIGIT / 1*DIGIT
+
+  c4_config_param = ( "$" c4_identifier ) as key *sp "=" *sp ( dq_string / c4_number ) as value
+
+  c4_config_params = c4_config_param *( *sp "," *sp c4_config_param )
+
+  c4_layout_config = "UpdateLayoutConfig" *sp "(" *sp c4_config_params as config_params *sp ")" line_end
+
+  c4_unquoted_param = !( "$" ( ALPHA / "_" ) ) 1*( !"," !")" !line_end ANY )
+
+  c4_param_value = dq_string / c4_variable_or_identifier / c4_unquoted_param
+
+  c4_sep = *sp "," *sp
+
+  c4_boundary_type = ( "Enterprise_Boundary" / "System_Boundary" / "Boundary" ) / ( "$" "{" c4_identifier as var "}" ) as variable
+
+  c4_boundary_attribute = ( "$" "link" "=" dq_string ) as link / ( "$" "tags" "=" dq_string ) as tags
+
+  c4_boundary_attributes = 1*( c4_sep c4_boundary_attribute )
+
+  c4_boundary_params = c4_variable_or_identifier as id [ c4_sep c4_param_value as label ] [ c4_sep c4_param_value as type ] [c4_boundary_attributes]
+
+  c4_boundary_body = ( c4_boundary / c4_element ) as item *( ws ( c4_boundary / c4_element ) as item )
+
+  c4_boundary = c4_boundary_type as boundary_type *sp "(" *sp c4_boundary_params *sp ")" *sp "{" ws [ c4_boundary_body as body ] ws "}" line_end
+
+  c4_element_type = "Enterprise_Boundary" / "System_Boundary" / "Person_Ext" / "Person" / "SystemDb_Ext" / "SystemDb" / "SystemQueue_Ext" / "SystemQueue" / "System_Ext" / "System" / "ContainerDb" / "ContainerQueue" / "Container" / "Component" / ( "$" "{" c4_identifier as var "}" ) as variable
+
+  c4_element_attribute = ( "$" "sprite" "=" dq_string ) as sprite / ( "$" "link" "=" dq_string ) as link / ( "$" "tags" "=" dq_string ) as tags
+
+  c4_element_attributes = 1*( c4_sep c4_element_attribute )
+
+  c4_element_params = c4_variable_or_identifier as id c4_sep c4_param_value as label [ c4_sep c4_param_value as description ] [ c4_sep c4_param_value as technology ] [c4_element_attributes]
+
+  c4_element = c4_element_type as element_type *sp "(" *sp c4_element_params *sp ")" [c4_macro] line_end
+
+  c4_relationship_params = c4_variable_or_identifier as from c4_sep c4_variable_or_identifier as to [ c4_sep c4_param_value as label ] [ c4_sep c4_param_value as technology ]
+
+  c4_relationship = ( "BiRel" / "Rel" ) as rel_type *sp "(" *sp c4_relationship_params *sp ")" [c4_macro] line_end
+
+  c4_statement = c4_title / c4_layout_config / c4_boundary / c4_relationship / c4_element
+
+  c4_statements = 1*( c4_statement ws )
+
+  c4 = ws ( c4_canonical_header ws c4_statements ws / c4_compatibility_header ws [c4_statements] ws )
+
+  entry c4: c4
+
+  test c4 {
+    accept "C4Context\n  title T\n  Person(u, \"User\")\n  System(s, \"S\", \"d\", $tags=\"x\")\n  Rel(u, s, \"uses\")"
+    accept "C4 diagram"
+    accept "C4Container\n  Boundary(b, \"B\") {\n    Container(c, \"C\")\n  }"
+    reject "C4Context"
+  }
+
+  ## ------------------------------------------------------------------
+  ## class_diagram (grammars/class_diagram.rb)
+  ## ------------------------------------------------------------------
+
+  ## mermaid's own letter table (MERMAID_UNICODE_TEXT), generated.
+  class_unicode_letter = %x00AA / %x00B5 / %x00BA / %x00C0-00D6 / %x00D8-00F6 / %x00F8-02C1 / %x02C6-02D1 / %x02E0-02E4 / %x02EC / %x02EE / %x0370-0374 / %x0376 / %x0377 / %x037A-037D / %x0386 / %x0388-038A / %x038C / %x038E-03A1 / %x03A3-03F5 / %x03F7-0481 / %x048A-0527 / %x0531-0556 / %x0559 / %x0561-0587 / %x05D0-05EA / %x05F0-05F2 / %x0620-064A / %x066E / %x066F / %x0671-06D3 / %x06D5 / %x06E5 / %x06E6 / %x06EE / %x06EF / %x06FA-06FC / %x06FF / %x0710 / %x0712-072F / %x074D-07A5 / %x07B1 / %x07CA-07EA / %x07F4 / %x07F5 / %x07FA / %x0800-0815 / %x081A / %x0824 / %x0828 / %x0840-0858 / %x08A0 / %x08A2-08AC / %x0904-0939 / %x093D / %x0950 / %x0958-0961 / %x0971-0977 / %x0979-097F / %x0985-098C / %x098F / %x0990 / %x0993-09A8 / %x09AA-09B0 / %x09B2 / %x09B6-09B9 / %x09BD / %x09CE / %x09DC / %x09DD / %x09DF-09E1 / %x09F0 / %x09F1 / %x0A05-0A0A / %x0A0F / %x0A10 / %x0A13-0A28 / %x0A2A-0A30 / %x0A32 / %x0A33 / %x0A35 / %x0A36 / %x0A38 / %x0A39 / %x0A59-0A5C / %x0A5E / %x0A72-0A74 / %x0A85-0A8D / %x0A8F-0A91 / %x0A93-0AA8 / %x0AAA-0AB0 / %x0AB2 / %x0AB3 / %x0AB5-0AB9 / %x0ABD / %x0AD0 / %x0AE0 / %x0AE1 / %x0B05-0B0C / %x0B0F / %x0B10 / %x0B13-0B28 / %x0B2A-0B30 / %x0B32 / %x0B33 / %x0B35-0B39 / %x0B3D / %x0B5C / %x0B5D / %x0B5F-0B61 / %x0B71 / %x0B83 / %x0B85-0B8A / %x0B8E-0B90 / %x0B92-0B95 / %x0B99 / %x0B9A / %x0B9C / %x0B9E / %x0B9F / %x0BA3 / %x0BA4 / %x0BA8-0BAA / %x0BAE-0BB9 / %x0BD0 / %x0C05-0C0C / %x0C0E-0C10 / %x0C12-0C28 / %x0C2A-0C33 / %x0C35-0C39 / %x0C3D / %x0C58 / %x0C59 / %x0C60 / %x0C61 / %x0C85-0C8C / %x0C8E-0C90 / %x0C92-0CA8 / %x0CAA-0CB3 / %x0CB5-0CB9 / %x0CBD / %x0CDE / %x0CE0 / %x0CE1 / %x0CF1 / %x0CF2 / %x0D05-0D0C / %x0D0E-0D10 / %x0D12-0D3A / %x0D3D / %x0D4E / %x0D60 / %x0D61 / %x0D7A-0D7F / %x0D85-0D96 / %x0D9A-0DB1 / %x0DB3-0DBB / %x0DBD / %x0DC0-0DC6 / %x0E01-0E30 / %x0E32 / %x0E33 / %x0E40-0E46 / %x0E81 / %x0E82 / %x0E84 / %x0E87 / %x0E88 / %x0E8A / %x0E8D / %x0E94-0E97 / %x0E99-0E9F / %x0EA1-0EA3 / %x0EA5 / %x0EA7 / %x0EAA / %x0EAB / %x0EAD-0EB0 / %x0EB2 / %x0EB3 / %x0EBD / %x0EC0-0EC4 / %x0EC6 / %x0EDC-0EDF / %x0F00 / %x0F40-0F47 / %x0F49-0F6C / %x0F88-0F8C / %x1000-102A / %x103F / %x1050-1055 / %x105A-105D / %x1061 / %x1065 / %x1066 / %x106E-1070 / %x1075-1081 / %x108E / %x10A0-10C5 / %x10C7 / %x10CD / %x10D0-10FA / %x10FC-1248 / %x124A-124D / %x1250-1256 / %x1258 / %x125A-125D / %x1260-1288 / %x128A-128D / %x1290-12B0 / %x12B2-12B5 / %x12B8-12BE / %x12C0 / %x12C2-12C5 / %x12C8-12D6 / %x12D8-1310 / %x1312-1315 / %x1318-135A / %x1380-138F / %x13A0-13F4 / %x1401-166C / %x166F-167F / %x1681-169A / %x16A0-16EA / %x1700-170C / %x170E-1711 / %x1720-1731 / %x1740-1751 / %x1760-176C / %x176E-1770 / %x1780-17B3 / %x17D7 / %x17DC / %x1820-1877 / %x1880-18A8 / %x18AA / %x18B0-18F5 / %x1900-191C / %x1950-196D / %x1970-1974 / %x1980-19AB / %x19C1-19C7 / %x1A00-1A16 / %x1A20-1A54 / %x1AA7 / %x1B05-1B33 / %x1B45-1B4B / %x1B83-1BA0 / %x1BAE / %x1BAF / %x1BBA-1BE5 / %x1C00-1C23 / %x1C4D-1C4F / %x1C5A-1C7D / %x1CE9-1CEC / %x1CEE-1CF1 / %x1CF5 / %x1CF6 / %x1D00-1DBF / %x1E00-1F15 / %x1F18-1F1D / %x1F20-1F45 / %x1F48-1F4D / %x1F50-1F57 / %x1F59 / %x1F5B / %x1F5D / %x1F5F-1F7D / %x1F80-1FB4 / %x1FB6-1FBC / %x1FBE / %x1FC2-1FC4 / %x1FC6-1FCC / %x1FD0-1FD3 / %x1FD6-1FDB / %x1FE0-1FEC / %x1FF2-1FF4 / %x1FF6-1FFC / %x2071 / %x207F / %x2090-209C / %x2102 / %x2107 / %x210A-2113 / %x2115 / %x2119-211D / %x2124 / %x2126 / %x2128 / %x212A-212D / %x212F-2139 / %x213C-213F / %x2145-2149 / %x214E / %x2183 / %x2184 / %x2C00-2C2E / %x2C30-2C5E / %x2C60-2CE4 / %x2CEB-2CEE / %x2CF2 / %x2CF3 / %x2D00-2D25 / %x2D27 / %x2D2D / %x2D30-2D67 / %x2D6F / %x2D80-2D96 / %x2DA0-2DA6 / %x2DA8-2DAE / %x2DB0-2DB6 / %x2DB8-2DBE / %x2DC0-2DC6 / %x2DC8-2DCE / %x2DD0-2DD6 / %x2DD8-2DDE / %x2E2F / %x3005 / %x3006 / %x3031-3035 / %x303B / %x303C / %x3041-3096 / %x309D-309F / %x30A1-30FA / %x30FC-30FF / %x3105-312D / %x3131-318E / %x31A0-31BA / %x31F0-31FF / %x3400-4DB5 / %x4E00-9FCC / %xA000-A48C / %xA4D0-A4FD / %xA500-A60C / %xA610-A61F / %xA62A / %xA62B / %xA640-A66E / %xA67F-A697 / %xA6A0-A6E5 / %xA717-A71F / %xA722-A788 / %xA78B-A78E / %xA790-A793 / %xA7A0-A7AA / %xA7F8-A801 / %xA803-A805 / %xA807-A80A / %xA80C-A822 / %xA840-A873 / %xA882-A8B3 / %xA8F2-A8F7 / %xA8FB / %xA90A-A925 / %xA930-A946 / %xA960-A97C / %xA984-A9B2 / %xA9CF / %xAA00-AA28 / %xAA40-AA42 / %xAA44-AA4B / %xAA60-AA76 / %xAA7A / %xAA80-AAAF / %xAAB1 / %xAAB5 / %xAAB6 / %xAAB9-AABD / %xAAC0 / %xAAC2 / %xAADB-AADD / %xAAE0-AAEA / %xAAF2-AAF4 / %xAB01-AB06 / %xAB09-AB0E / %xAB11-AB16 / %xAB20-AB26 / %xAB28-AB2E / %xABC0-ABE2 / %xAC00-D7A3 / %xD7B0-D7C6 / %xD7CB-D7FB / %xF900-FA6D / %xFA70-FAD9 / %xFB00-FB06 / %xFB13-FB17 / %xFB1D / %xFB1F-FB28 / %xFB2A-FB36 / %xFB38-FB3C / %xFB3E / %xFB40 / %xFB41 / %xFB43 / %xFB44 / %xFB46-FBB1 / %xFBD3-FD3D / %xFD50-FD8F / %xFD92-FDC7 / %xFDF0-FDFB / %xFE70-FE74 / %xFE76-FEFC / %xFF21-FF3A / %xFF41-FF5A / %xFF66-FFBE / %xFFC2-FFC7 / %xFFCA-FFCF / %xFFD2-FFD7 / %xFFDA-FFDC
+
+  class_name_char = ALPHA / DIGIT / "_" / class_unicode_letter
+
+  class_rest = 1*( !line_end ANY )
+
+  class_direction_value = ( "TD" / "TB" / "LR" / "RL" / "BT" ) as dir_value
+
+  class_header = "classDiagram-v2" as header *sp &( newline / eof ) ws / "classDiagram" as header !( class_name_char / "-" ) *sp [ class_direction_value as direction ] *sp &( newline / eof ) ws
+
+  class_backtick_name = "`" 1*( !"`" ANY ) "`"
+
+  class_hyphenated_word = 1*class_name_char *( "-" 1*class_name_char )
+
+  class_plain_name = class_hyphenated_word *( "." class_hyphenated_word )
+
+  class_name = class_backtick_name / class_plain_name
+
+  class_generic_params = "~" 1*( !"~" ANY ) as generic_type "~"
+
+  class_ref = class_name as class_id [ *sp class_generic_params as generic ]
+
+  class_label_string = %x22 *( !%x22 ANY ) as string %x22
+
+  class_text_label = "[" *sp class_label_string *sp "]"
+
+  class_stereotype = "<<" 1*( !">>" ANY ) as stereotype_value ">>"
+
+  class_css_shorthand = ":::" *sp 1*class_name_char as css_class
+
+  class_member_end = *sp &( comment / newline / "}" / eof )
+
+  class_body_char = !( "%%" / %x0A / "{" / "}" ) ANY
+
+  class_body_text = !%x22 class_body_char *class_body_char class_member_end
+
+  class_indented_quote_text = %x22 *class_body_char class_member_end
+
+  class_annotation_text = 1*( !( ">>" class_member_end ) class_body_char )
+
+  class_body_annotation = "<<" ( class_annotation_text as body_stereotype / "" as body_stereotype ) ">>" class_member_end
+
+  class_colon_annotation_text = 1*( !( ">>" class_member_end ) !( ":" / ";" ) class_body_char )
+
+  class_colon_body_annotation = "<<" ( class_colon_annotation_text as body_stereotype / "" as body_stereotype ) ">>" class_member_end
+
+  class_colon_text = 1*( !( ":" / ";" / %x0A ) !line_end ANY )
+
+  class_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  class_type_expression = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "<" / ">" ) [ "~" *( !"~" ANY ) "~" ]
+
+  class_method_return_type = *sp ":" *sp class_type_expression as type
+
+  class_method_params = 1*( !")" ANY )
+
+  class_method_definition = class_identifier as method_name "(" [ class_method_params as parameters ] ")" [ class_method_return_type as return_type ]
+
+  class_attribute_definition = class_type_expression as type sp class_identifier as attr_name / class_identifier as attr_name [ *sp ":" *sp class_type_expression as type ]
+
+  class_member_definition = class_method_definition / class_attribute_definition
+
+  class_visibility = ( "+" / "-" / "#" / "~" ) as vis_symbol
+
+  class_member = 1*sp class_indented_quote_text as raw_member / *sp ( class_body_annotation / [ class_visibility as visibility ] class_member_definition as member class_member_end / class_body_text as raw_member )
+
+  class_body_gap = *( *sp ( newline / comment ) )
+
+  class_members = 1*( class_member class_body_gap )
+
+  class_body = "{" class_body_gap [ class_members as body ] ws "}"
+
+  class_declaration_end = ";" *sp ( [comment] newline / eof ) / *sp ( [comment] newline / &( "}" / eof ) )
+
+  class_declaration = "class" as keyword sp class_name as class_id *sp [ class_generic_params as generic ] *sp [ class_text_label as text_label ] *sp ( class_css_shorthand / [ class_stereotype as stereotype ] ) *sp [ class_body ] class_declaration_end
+
+  class_standalone_stereotype = class_stereotype as stereotype sp class_name as class_id line_end
+
+  class_colon_member = class_ref *sp ":" *sp ( class_colon_body_annotation line_end / [ class_visibility as visibility ] class_member_definition as member line_end / class_colon_text as raw_member line_end )
+
+  class_string = dq_string / sq_string
+
+  class_link = "link" as link_keyword sp class_name as class_id sp class_string as url [ sp class_string as tooltip ] line_end
+
+  class_callback = "callback" as callback_keyword sp class_name as class_id sp class_string as callback_fn [ sp class_string as tooltip ] line_end
+
+  class_click = "click" as ignored sp class_name [ sp class_rest ] line_end
+
+  class_style = "style" as ignored sp class_name sp class_rest line_end
+
+  class_css_class = "cssClass" as ignored sp dq_string sp class_name line_end
+
+  class_class_def = "classDef" as ignored sp class_rest line_end
+
+  class_direction = "direction" as direction_keyword sp class_direction_value line_end
+
+  class_acc_title = "accTitle" as ignored *sp ":" [ class_rest ] line_end
+
+  class_acc_descr = "accDescr" as ignored *sp ( ":" [ class_rest ] / "{" *( !"}" ANY ) "}" ) line_end
+
+  class_note = "note" as ignored [ sp "for" sp class_name as note_for ] sp class_rest as note_text line_end
+
+  class_standalone = class_ref line_end
+
+  class_cardinality = class_string
+
+    class_operator = ( "|>..|>" / "|>..<|" / "|>--|>" / "|>--<|" / "<|..|>" / "<|..<|" / "<|--<|" / "<|--|>" / "*--<|" / "*--|>" / "*..<|" / "*..|>" / "o--<|" / "o--|>" / "o..<|" / "o..|>" / ">..|>" / ">..<|" / "<--<|" / "<--|>" / "<..<|" / "<..|>" / ">--|>" / ">--<|" / "<|--*" / "<|--o" / "<|--<" / "<|-->" / "<|..*" / "<|..o" / "<|..<" / "<|..>" / "|>--*" / "|>--o" / "|>--<" / "|>-->" / "|>..>" / "|>..<" / "|>..o" / "|>..*" / "*--<" / "<..*" / "<..o" / "<..<" / "<..>" / "*--o" / "*--*" / ">--*" / ">--o" / ">--<" / ">-->" / ">..*" / ">..o" / ">..<" / ">..>" / "*..>" / "*..<" / "o--*" / "o--o" / "o--<" / "o-->" / "*..o" / "*..*" / "o..*" / "o..o" / "o..<" / "o..>" / "<--*" / "<--o" / "<--<" / "<-->" / "*-->" / "o.." / "<|--" / "--|>" / "*--" / "--*" / "o--" / "--o" / "..|>" / "<|.." / "..>" / "<.." / "-->" / "<--" / "--" / ".." ) as arrow
+
+  class_pipe_label = "|" 1*( !"|" ANY ) as label_text "|"
+
+  class_colon_label = *sp ":" *sp 1*( !line_end ANY ) as label_text
+
+  class_relationship = class_name as from_id [ *sp class_generic_params as from_generic ] *sp [ class_cardinality as source_card ] *sp class_operator as operator *sp [ class_pipe_label as pipe_label ] *sp [ class_cardinality as target_card ] *sp class_name as to_id [ *sp class_generic_params as to_generic ] [ class_colon_label as colon_label ] line_end
+
+  class_namespace_name = 1*( ALPHA / DIGIT / "_" / "." / "-" )
+
+  class_namespace_statement = class_declaration / class_standalone_stereotype / class_colon_member / class_relationship / class_standalone
+
+  class_namespace = "namespace" as namespace_keyword sp class_namespace_name as namespace_name *sp "{" ws [ 1*( class_namespace_statement ws ) as namespace_body ] ws "}" line_end
+
+  class_statement = class_acc_title / class_acc_descr / class_namespace / class_declaration / class_standalone_stereotype / class_colon_member / class_relationship / class_link / class_callback / class_click / class_style / class_css_class / class_class_def / class_direction / class_note / class_standalone
+
+  class_diagram = ws class_header ws [ 1*( class_statement ws ) as statements ] ws
+
+  entry class_diagram: class_diagram
+
+  test class_diagram {
+    accept "classDiagram"
+    accept "classDiagram-v2\n  A <|-- B"
+    accept "classDiagram LR\n  class A {\n    +int x\n    +run() void\n  }\n  A : +y"
+    accept "classDiagram\n  namespace N {\n    class A\n  }\n  note for A \"hi\""
+    reject "classDiagram LR extra"
+    reject "classDiagram\n  A <|-- "
+  }
+
+  ## ------------------------------------------------------------------
+  ## er_diagram (grammars/er_diagram.rb)
+  ## ------------------------------------------------------------------
+
+  ## JS's \s (ECMA-262 WhiteSpace + LineTerminator).
+  er_diagram_js_space = %x09 / %x0A / %x0B / %x0C / %x0D / %x20 / %xA0 / %x1680 / %x2000-200A / %x2028 / %x2029 / %x202F / %x205F / %x3000 / %xFEFF
+
+  er_diagram_line_terminator = %x0A / %x0D / %x2028 / %x2029
+
+  er_diagram_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  er_diagram_entity_name = %x22 1*( !%x22 ANY ) %x22 / 1*DIGIT "." 1*DIGIT / 1*DIGIT / ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "-" )
+
+  er_diagram_class_name_list = er_diagram_identifier *( "," [sp] er_diagram_identifier )
+
+  er_diagram_class_def = "classDef" 1*sp er_diagram_class_name_list as classdef_names 1*sp 1*( !line_end ANY ) as classdef_styles line_end
+
+  er_diagram_entity_definition = er_diagram_entity_name as entity_id [ ":::" er_diagram_class_name_list as entity_classes ] *sp "{" ws [ er_diagram_attributes as attributes ] ws "}" line_end
+
+  er_diagram_relationship = er_diagram_entity_name as from_id [ ":::" er_diagram_class_name_list as from_classes ] *sp er_diagram_pattern as pattern *sp er_diagram_entity_name as to_id [ ":::" er_diagram_class_name_list as to_classes ] *sp [ er_diagram_label as label ] line_end
+
+  er_diagram_entity_declaration = er_diagram_entity_name as entity_id [ ":::" er_diagram_class_name_list as entity_classes ] line_end
+
+  er_diagram_pattern = er_diagram_cardinality as card_from er_diagram_operator as operator er_diagram_cardinality as card_to
+
+  er_diagram_cardinality = "||" / "o{" / "|{" / "}o" / "}|" / "o|" / "|o" / "{o" / "{|" / "}{" / "{}"
+
+  er_diagram_operator = "==" / "--" / ".."
+
+  er_diagram_label = ":" *sp 1*( !line_end ANY ) as label_text
+
+  er_diagram_attributes = 1*( er_diagram_attribute ws )
+
+  er_diagram_attribute = [ er_diagram_attribute_type ] as type *sp er_diagram_identifier as name *sp [ er_diagram_key_list ] as key [ *sp er_diagram_note as note ] [ *sp comment ]
+
+  er_diagram_note = %x22 *( !%x22 ANY ) as string %x22
+
+  er_diagram_attribute_type = er_diagram_tilde_type / er_diagram_identifier
+
+  er_diagram_tilde_type = ( *( !"~" !er_diagram_js_space ANY ) 1*( *( !"~" !er_diagram_line_terminator ANY ) "~" ) *( !er_diagram_js_space ANY ) ) as string
+
+  er_diagram_key_type = ( "PK" / "FK" / "UK" ) as key_type
+
+  er_diagram_key_list = er_diagram_key_type *( *sp "," *sp er_diagram_key_type )
+
+  er_diagram_statement = er_diagram_class_def / er_diagram_entity_definition / er_diagram_relationship / er_diagram_entity_declaration
+
+  er_diagram = ws "erDiagram" as header ws [ 1*( er_diagram_statement ws ) as statements ] ws
+
+  entry er_diagram: er_diagram
+
+  test er_diagram {
+    accept "erDiagram"
+    accept "erDiagram\n  CUSTOMER ||--o{ ORDER : places"
+    accept "erDiagram\n  CAR {\n    string make PK\n    int year \"note\"\n  }"
+    accept "erDiagram\n  classDef a fill:#f96\n  CAR:::a"
+    reject "erDiagram\n  CUSTOMER ||--o{"
+    reject "graph TD"
+  }
+
+  ## ------------------------------------------------------------------
+  ## flowchart (grammars/flowchart.rb)
+  ## ------------------------------------------------------------------
+  ## The captures use the names of the Parslet grammar, so the Parslet
+  ## builder reads the native tree. Edge ids ("A e1@--> B") are left to
+  ## the Parslet grammar: no rule here takes an "@" outside "@{...}".
+
+  ## mermaid's "\s" without the newline.
+  flowchart_ls = %x09 / %x0B / %x0C / %x20 / %xA0 / %x1680 / %x2000-200A / %x2028 / %x2029 / %x202F / %x205F / %x3000 / %xFEFF
+
+  flowchart_word_boundary = !( ALPHA / DIGIT / "_" )
+
+  flowchart_semicolon_run = 1*( ";" *sp )
+
+  flowchart_no_comment = !"%%"
+
+  flowchart_separator = flowchart_semicolon_run flowchart_no_comment
+
+  flowchart_line_end = [";"] *sp ( newline / eof )
+
+  flowchart_statement_end = flowchart_separator / flowchart_line_end
+
+  flowchart_loose_statement_end = *sp flowchart_separator / flowchart_line_end
+
+  ## --- header ---------------------------------------------------------
+
+  flowchart_word_direction = "TD" / "TB" / "BT" / "BR" / "LR" / "RL" / "v"
+
+  flowchart_glyph_direction = "<" / ">" / "^"
+
+  flowchart_direction = ( flowchart_word_direction / flowchart_glyph_direction ) as dir_value
+
+  flowchart_header_direction = ( 1*sp flowchart_direction ) / ( flowchart_glyph_direction as dir_value )
+
+  flowchart_directed_header = flowchart_header_direction as direction ( flowchart_separator / *sp ( newline / eof ) )
+
+  flowchart_undirected_header = !flowchart_direction as direction *sp ( newline / eof )
+
+  flowchart_header = ( "flowchart-elk" / "flowchart" / "graph" ) as header ( flowchart_directed_header / flowchart_undirected_header )
+
+  ## --- accessibility --------------------------------------------------
+
+  flowchart_acc_gap = *flowchart_ls *( newline *( flowchart_ls / newline / comment ) )
+
+  flowchart_acc_line = ( "accTitle" / "accDescr" ) as acc_keyword flowchart_acc_gap ":" flowchart_acc_gap *( !newline ANY ) as acc_text ( newline / eof )
+
+  flowchart_comment_line = newline *flowchart_ls "%%" *( !newline ANY )
+
+  flowchart_acc_block_body = *( flowchart_comment_line / ( !"}" ANY ) )
+
+  flowchart_acc_descr_block = "accDescr" as acc_keyword flowchart_acc_gap "{" flowchart_acc_block_body as acc_text [ "}" *flowchart_ls [";"] ]
+
+  flowchart_accessibility_statement = flowchart_acc_descr_block / flowchart_acc_line
+
+  ## --- direction statement --------------------------------------------
+
+  flowchart_statement_direction = ( "TD" / "TB" / "BT" / "LR" / "RL" ) as dir_value
+
+  flowchart_direction_statement = "direction" as direction_keyword sp flowchart_statement_direction flowchart_statement_end
+
+  ## --- keywords and ids -----------------------------------------------
+
+  flowchart_spaced_keyword = ( "click" / "href" / "call" ) &( sp / newline / eof )
+
+  flowchart_reserved_word = ( "swimlane-beta" / "interpolate" / "flowchart" / "linkStyle" / "subgraph" / "classDef" / "_parent" / "_blank" / "_self" / "graph" / "style" / "class" / "_top" / "end" ) flowchart_word_boundary
+
+  flowchart_node_keyword = flowchart_reserved_word / flowchart_spaced_keyword
+
+  flowchart_subgraph_reserved = ( "interpolate" / "_parent" / "default" / "_blank" / "_self" / "_top" ) flowchart_word_boundary
+
+  flowchart_subgraph_keyword = flowchart_subgraph_reserved / flowchart_spaced_keyword
+
+  flowchart_unicode_letter = %x00AA / %x00B5 / %x00BA / %x00C0-00D6 / %x00D8-00F6 / %x00F8-02C1 / %x02C6-02D1 / %x02E0-02E4 / %x02EC / %x02EE / %x0370-0374 / %x0376 / %x0377 / %x037A-037D / %x0386 / %x0388-038A / %x038C / %x038E-03A1 / %x03A3-03F5 / %x03F7-0481 / %x048A-0527 / %x0531-0556 / %x0559 / %x0561-0587 / %x05D0-05EA / %x05F0-05F2 / %x0620-064A / %x066E / %x066F / %x0671-06D3 / %x06D5 / %x06E5 / %x06E6 / %x06EE / %x06EF / %x06FA-06FC / %x06FF / %x0710 / %x0712-072F / %x074D-07A5 / %x07B1 / %x07CA-07EA / %x07F4 / %x07F5 / %x07FA / %x0800-0815 / %x081A / %x0824 / %x0828 / %x0840-0858 / %x08A0 / %x08A2-08AC / %x0904-0939 / %x093D / %x0950 / %x0958-0961 / %x0971-0977 / %x0979-097F / %x0985-098C / %x098F / %x0990 / %x0993-09A8 / %x09AA-09B0 / %x09B2 / %x09B6-09B9 / %x09BD / %x09CE / %x09DC / %x09DD / %x09DF-09E1 / %x09F0 / %x09F1 / %x0A05-0A0A / %x0A0F / %x0A10 / %x0A13-0A28 / %x0A2A-0A30 / %x0A32 / %x0A33 / %x0A35 / %x0A36 / %x0A38 / %x0A39 / %x0A59-0A5C / %x0A5E / %x0A72-0A74 / %x0A85-0A8D / %x0A8F-0A91 / %x0A93-0AA8 / %x0AAA-0AB0 / %x0AB2 / %x0AB3 / %x0AB5-0AB9 / %x0ABD / %x0AD0 / %x0AE0 / %x0AE1 / %x0B05-0B0C / %x0B0F / %x0B10 / %x0B13-0B28 / %x0B2A-0B30 / %x0B32 / %x0B33 / %x0B35-0B39 / %x0B3D / %x0B5C / %x0B5D / %x0B5F-0B61 / %x0B71 / %x0B83 / %x0B85-0B8A / %x0B8E-0B90 / %x0B92-0B95 / %x0B99 / %x0B9A / %x0B9C / %x0B9E / %x0B9F / %x0BA3 / %x0BA4 / %x0BA8-0BAA / %x0BAE-0BB9 / %x0BD0 / %x0C05-0C0C / %x0C0E-0C10 / %x0C12-0C28 / %x0C2A-0C33 / %x0C35-0C39 / %x0C3D / %x0C58 / %x0C59 / %x0C60 / %x0C61 / %x0C85-0C8C / %x0C8E-0C90 / %x0C92-0CA8 / %x0CAA-0CB3 / %x0CB5-0CB9 / %x0CBD / %x0CDE / %x0CE0 / %x0CE1 / %x0CF1 / %x0CF2 / %x0D05-0D0C / %x0D0E-0D10 / %x0D12-0D3A / %x0D3D / %x0D4E / %x0D60 / %x0D61 / %x0D7A-0D7F / %x0D85-0D96 / %x0D9A-0DB1 / %x0DB3-0DBB / %x0DBD / %x0DC0-0DC6 / %x0E01-0E30 / %x0E32 / %x0E33 / %x0E40-0E46 / %x0E81 / %x0E82 / %x0E84 / %x0E87 / %x0E88 / %x0E8A / %x0E8D / %x0E94-0E97 / %x0E99-0E9F / %x0EA1-0EA3 / %x0EA5 / %x0EA7 / %x0EAA / %x0EAB / %x0EAD-0EB0 / %x0EB2 / %x0EB3 / %x0EBD / %x0EC0-0EC4 / %x0EC6 / %x0EDC-0EDF / %x0F00 / %x0F40-0F47 / %x0F49-0F6C / %x0F88-0F8C / %x1000-102A / %x103F / %x1050-1055 / %x105A-105D / %x1061 / %x1065 / %x1066 / %x106E-1070 / %x1075-1081 / %x108E / %x10A0-10C5 / %x10C7 / %x10CD / %x10D0-10FA / %x10FC-1248 / %x124A-124D / %x1250-1256 / %x1258 / %x125A-125D / %x1260-1288 / %x128A-128D / %x1290-12B0 / %x12B2-12B5 / %x12B8-12BE / %x12C0 / %x12C2-12C5 / %x12C8-12D6 / %x12D8-1310 / %x1312-1315 / %x1318-135A / %x1380-138F / %x13A0-13F4 / %x1401-166C / %x166F-167F / %x1681-169A / %x16A0-16EA / %x1700-170C / %x170E-1711 / %x1720-1731 / %x1740-1751 / %x1760-176C / %x176E-1770 / %x1780-17B3 / %x17D7 / %x17DC / %x1820-1877 / %x1880-18A8 / %x18AA / %x18B0-18F5 / %x1900-191C / %x1950-196D / %x1970-1974 / %x1980-19AB / %x19C1-19C7 / %x1A00-1A16 / %x1A20-1A54 / %x1AA7 / %x1B05-1B33 / %x1B45-1B4B / %x1B83-1BA0 / %x1BAE / %x1BAF / %x1BBA-1BE5 / %x1C00-1C23 / %x1C4D-1C4F / %x1C5A-1C7D / %x1CE9-1CEC / %x1CEE-1CF1 / %x1CF5 / %x1CF6 / %x1D00-1DBF / %x1E00-1F15 / %x1F18-1F1D / %x1F20-1F45 / %x1F48-1F4D / %x1F50-1F57 / %x1F59 / %x1F5B / %x1F5D / %x1F5F-1F7D / %x1F80-1FB4 / %x1FB6-1FBC / %x1FBE / %x1FC2-1FC4 / %x1FC6-1FCC / %x1FD0-1FD3 / %x1FD6-1FDB / %x1FE0-1FEC / %x1FF2-1FF4 / %x1FF6-1FFC / %x2071 / %x207F / %x2090-209C / %x2102 / %x2107 / %x210A-2113 / %x2115 / %x2119-211D / %x2124 / %x2126 / %x2128 / %x212A-212D / %x212F-2139 / %x213C-213F / %x2145-2149 / %x214E / %x2183 / %x2184 / %x2C00-2C2E / %x2C30-2C5E / %x2C60-2CE4 / %x2CEB-2CEE / %x2CF2 / %x2CF3 / %x2D00-2D25 / %x2D27 / %x2D2D / %x2D30-2D67 / %x2D6F / %x2D80-2D96 / %x2DA0-2DA6 / %x2DA8-2DAE / %x2DB0-2DB6 / %x2DB8-2DBE / %x2DC0-2DC6 / %x2DC8-2DCE / %x2DD0-2DD6 / %x2DD8-2DDE / %x2E2F / %x3005 / %x3006 / %x3031-3035 / %x303B / %x303C / %x3041-3096 / %x309D-309F / %x30A1-30FA / %x30FC-30FF / %x3105-312D / %x3131-318E / %x31A0-31BA / %x31F0-31FF / %x3400-4DB5 / %x4E00-9FCC / %xA000-A48C / %xA4D0-A4FD / %xA500-A60C / %xA610-A61F / %xA62A / %xA62B / %xA640-A66E / %xA67F-A697 / %xA6A0-A6E5 / %xA717-A71F / %xA722-A788 / %xA78B-A78E / %xA790-A793 / %xA7A0-A7AA / %xA7F8-A801 / %xA803-A805 / %xA807-A80A / %xA80C-A822 / %xA840-A873 / %xA882-A8B3 / %xA8F2-A8F7 / %xA8FB / %xA90A-A925 / %xA930-A946 / %xA960-A97C / %xA984-A9B2 / %xA9CF / %xAA00-AA28 / %xAA40-AA42 / %xAA44-AA4B / %xAA60-AA76 / %xAA7A / %xAA80-AAAF / %xAAB1 / %xAAB5 / %xAAB6 / %xAAB9-AABD / %xAAC0 / %xAAC2 / %xAADB-AADD / %xAAE0-AAEA / %xAAF2-AAF4 / %xAB01-AB06 / %xAB09-AB0E / %xAB11-AB16 / %xAB20-AB26 / %xAB28-AB2E / %xABC0-ABE2 / %xAC00-D7A3 / %xD7B0-D7C6 / %xD7CB-D7FB / %xF900-FA6D / %xFA70-FAD9 / %xFB00-FB06 / %xFB13-FB17 / %xFB1D / %xFB1F-FB28 / %xFB2A-FB36 / %xFB38-FB3C / %xFB3E / %xFB40 / %xFB41 / %xFB43 / %xFB44 / %xFB46-FBB1 / %xFBD3-FD3D / %xFD50-FD8F / %xFD92-FDC7 / %xFDF0-FDFB / %xFE70-FE74 / %xFE76-FEFC / %xFF21-FF3A / %xFF41-FF5A / %xFF66-FFBE / %xFFC2-FFC7 / %xFFCA-FFCF / %xFFD2-FFD7 / %xFFDA-FFDC
+
+  ## printable ASCII but not ; : , " % ( ) < = > @ [ ] ^ { | } ~ . - # & * 0-9
+  flowchart_id_ascii_char = %x21 / %x24 / %x27 / %x2B / %x2F / %x3F / %x41-5A / %x5C / %x5F-7A
+
+  flowchart_id_carry_char = "#" / "&" / "*" / DIGIT
+
+  flowchart_id_restart_char = flowchart_unicode_letter
+
+  flowchart_id_char = flowchart_id_ascii_char / flowchart_id_carry_char / flowchart_id_restart_char
+
+  flowchart_id_dot = "."
+
+  flowchart_id_hyphen = "-" !( "-" / "." )
+
+  flowchart_id_body = flowchart_id_dot / flowchart_id_hyphen / flowchart_id_char
+
+  flowchart_entity_escape = "#" 1*( ALPHA / DIGIT / "_" ) ";"
+
+  flowchart_id_run = 1*( !flowchart_entity_escape flowchart_id_body )
+
+  flowchart_arrowhead_open = ( "x" / "o" ) ["-"] 1*"." "-" [ "x" / "o" / ">" ]
+
+  flowchart_arrowhead_ends_id = flowchart_arrowhead_open !flowchart_id_body
+
+  flowchart_settled_char = flowchart_id_dot / flowchart_id_hyphen / flowchart_id_ascii_char
+
+  flowchart_settled_run = flowchart_settled_char *( flowchart_settled_char / flowchart_id_carry_char )
+
+  flowchart_restart_run = 1*( flowchart_id_carry_char / flowchart_id_restart_char )
+
+  flowchart_restart_step = flowchart_arrowhead_open / ( [flowchart_settled_run] flowchart_restart_run )
+
+  flowchart_xo_link_open = flowchart_arrowhead_open / ( ( "x" / "o" ) ( "--" / "==" / "-." ) )
+
+  flowchart_dotted_link_open = 1*"." "-"
+
+  ## token_at_lexer_restart(target), one rule per target
+  flowchart_restart_node_keyword = *( !flowchart_node_keyword flowchart_restart_step ) flowchart_node_keyword
+
+  flowchart_restart_subgraph_keyword = *( !flowchart_subgraph_keyword flowchart_restart_step ) flowchart_subgraph_keyword
+
+  flowchart_restart_arrowhead_open = *( !flowchart_arrowhead_open flowchart_restart_step ) flowchart_arrowhead_open
+
+  flowchart_restart_arrowhead_ends_id = *( !flowchart_arrowhead_ends_id flowchart_restart_step ) flowchart_arrowhead_ends_id
+
+  flowchart_dot_run_before_link = *( !flowchart_dotted_link_open flowchart_restart_step ) flowchart_dotted_link_open
+
+  flowchart_subgraph_end_word = "end" flowchart_word_boundary
+
+  flowchart_bare_subgraph_end_target = flowchart_subgraph_end_word *flowchart_ls ( newline / eof )
+
+  flowchart_bare_subgraph_end = *( !flowchart_bare_subgraph_end_target flowchart_restart_step ) flowchart_bare_subgraph_end_target
+
+  flowchart_arrowhead_dot_dash = flowchart_arrowhead_open / flowchart_restart_arrowhead_ends_id
+
+  flowchart_id_before_xo_link = 1*( !flowchart_xo_link_open flowchart_restart_step ) &flowchart_xo_link_open
+
+  flowchart_node_id = flowchart_id_before_xo_link / ( !flowchart_restart_node_keyword !flowchart_dot_run_before_link !flowchart_arrowhead_dot_dash flowchart_id_run )
+
+  ## --- subgraph -------------------------------------------------------
+
+  flowchart_subgraph_name_word = !flowchart_bare_subgraph_end !flowchart_restart_subgraph_keyword !flowchart_dot_run_before_link !flowchart_restart_arrowhead_open flowchart_id_run
+
+  flowchart_subgraph_quoted_name = %x22 1*( !%x22 ANY ) as string %x22
+
+  flowchart_subgraph_id = flowchart_subgraph_quoted_name / ( %x22 %x22 *sp flowchart_subgraph_name_word ) / flowchart_subgraph_name_word
+
+  flowchart_bracket_title = "[" 1*( !"]" ANY ) as subgraph_title "]"
+
+  flowchart_bracket_title_end = &( ( flowchart_semicolon_run flowchart_no_comment ) / newline / eof )
+
+  flowchart_bracketed_title = flowchart_bracket_title flowchart_bracket_title_end
+
+  flowchart_comment_word = "%%" *( !newline ANY )
+
+  flowchart_title_run = flowchart_comment_word / flowchart_subgraph_name_word
+
+  flowchart_free_title = !"[" ( flowchart_title_run *( 1*sp flowchart_title_run ) ) as subgraph_free_title
+
+  flowchart_subgraph_title = ( *sp flowchart_bracketed_title ) / ( 1*sp as subgraph_free_gap flowchart_free_title )
+
+  flowchart_declaration_end = *flowchart_ls ( ( flowchart_semicolon_run flowchart_no_comment ) / newline / eof )
+
+  flowchart_subgraph_trailing_name = *( 1*sp flowchart_subgraph_name_word ) [flowchart_subgraph_title]
+
+  flowchart_subgraph_name_and_title = ( flowchart_subgraph_title &flowchart_declaration_end ) / flowchart_subgraph_trailing_name
+
+  flowchart_close_at_space = !( "%%" / ";" / newline / eof )
+
+  flowchart_close_at_line_end = [flowchart_semicolon_run] *sp newline
+
+  flowchart_close_at_eof = [flowchart_semicolon_run] *sp eof
+
+  flowchart_close_at_semicolon = flowchart_semicolon_run !"%%"
+
+  flowchart_subgraph_close = ( 1*sp flowchart_close_at_space ) / ( *sp ( flowchart_close_at_line_end / flowchart_close_at_semicolon / flowchart_close_at_eof ) )
+
+  flowchart_subgraph_statement = "subgraph" as subgraph_keyword sp flowchart_subgraph_id as subgraph_id flowchart_subgraph_name_and_title flowchart_declaration_end ws [flowchart_statements] as subgraph_statements ws "end" as subgraph_end flowchart_subgraph_close
+
+  ## --- style, classDef, class, linkStyle ------------------------------
+
+  flowchart_structural_char = "[" / "]" / "{" / "}" / "(" / ")" / "<" / ">" / "|" / "~" / "@" / "=" / "^"
+
+  flowchart_compound_token = ":::" / "--" / "-."
+
+  flowchart_structural_token = flowchart_compound_token / flowchart_structural_char
+
+  flowchart_hashed_comma_gap = "," ( "," / newline / eof )
+
+  flowchart_comma_gap = flowchart_hashed_comma_gap / ( "," ";" )
+
+  flowchart_declaration_space = 1*sp !( newline / eof )
+
+  flowchart_hash_terminated_space = 1*sp ( "#" / !( newline / eof ) )
+
+  ## declaration_run(*guards), one rule per guard set
+  flowchart_run = 1*( !";" !newline !sp ANY ) / flowchart_declaration_space
+
+  flowchart_run_hcg = 1*( !flowchart_hashed_comma_gap !";" !newline !sp ANY ) / flowchart_declaration_space
+
+  flowchart_run_st = 1*( !flowchart_structural_token !";" !newline !sp ANY ) / flowchart_declaration_space
+
+  ## hash_terminated_run(*guards)
+  flowchart_hash_run = 1*( !"#" !";" !newline !sp ANY ) / flowchart_hash_terminated_space
+
+  flowchart_hash_run_cg = 1*( !flowchart_comma_gap !"#" !";" !newline !sp ANY ) / flowchart_hash_terminated_space
+
+  flowchart_hashed_comma_gap_scan = *flowchart_run_hcg flowchart_hashed_comma_gap
+
+  flowchart_empty_comma_item = "," / ( ["#"] *flowchart_hash_run_cg ( flowchart_comma_gap / ( "#" flowchart_hashed_comma_gap_scan ) ) )
+
+  flowchart_hashed_head = ["#"] *flowchart_hash_run "#"
+
+  flowchart_hashed_tail = *flowchart_run_st *sp &( newline / eof )
+
+  flowchart_hashed_property_list = flowchart_hashed_head *flowchart_run ( ( ";" *sp flowchart_hashed_tail ) / !";" )
+
+  flowchart_style_property = 1*flowchart_run
+
+  flowchart_style_property_list = !flowchart_empty_comma_item ( flowchart_hashed_property_list / ( !flowchart_hashed_head flowchart_style_property ) )
+
+  flowchart_reserved_keyword = flowchart_node_keyword
+
+  flowchart_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  flowchart_style_statement = "style" as style_keyword sp !flowchart_reserved_keyword flowchart_node_id as style_target ( sp flowchart_style_property_list ) as style_props flowchart_statement_end
+
+  flowchart_class_name_list = flowchart_identifier *( "," flowchart_identifier )
+
+  flowchart_class_def_statement = "classDef" as classdef_keyword sp flowchart_class_name_list as class_name ( sp flowchart_style_property_list ) as class_props flowchart_statement_end
+
+  flowchart_class_assignment_statement = "class" as class_keyword sp !flowchart_reserved_keyword flowchart_node_id as class_target sp flowchart_identifier as class_name flowchart_statement_end
+
+  flowchart_link_index = 1*DIGIT
+
+  flowchart_link_style_targets = "default" / ( flowchart_link_index *( "," flowchart_link_index ) )
+
+  flowchart_link_curve_char = !flowchart_ls !newline !";" ANY
+
+  flowchart_link_style_props = ( "interpolate" flowchart_ls 1*flowchart_link_curve_char as link_curve [ 1*flowchart_ls flowchart_style_property_list as link_props ] ) / ( flowchart_style_property_list as link_props )
+
+  flowchart_link_style_statement = "linkStyle" as link_style_keyword flowchart_ls flowchart_link_style_targets as link_targets flowchart_ls flowchart_link_style_props flowchart_statement_end as link_end
+
+  ## --- click ----------------------------------------------------------
+
+  flowchart_quoted_run = %x22 1*( !%x22 ANY ) %x22
+
+  flowchart_link_target = ( "_parent" / "_blank" / "_self" / "_top" ) flowchart_word_boundary
+
+  flowchart_callback_gap = 1*( sp / newline / comment )
+
+  flowchart_callback_name = 1*( !"(" !flowchart_line_end ANY )
+
+  flowchart_callback_action = "call" flowchart_callback_gap flowchart_callback_name [flowchart_callback_gap] "(" *( !")" ANY ) ")" [ sp flowchart_quoted_run ]
+
+  flowchart_link_tail = [ sp flowchart_quoted_run ] [ sp flowchart_link_target ]
+
+  flowchart_href_action = "href" sp flowchart_quoted_run flowchart_link_tail
+
+  flowchart_link_action = flowchart_quoted_run flowchart_link_tail
+
+  flowchart_token_char = !sp !flowchart_line_end !";" !flowchart_structural_token ANY
+
+  flowchart_bare_token = !flowchart_reserved_keyword !%x22 flowchart_token_char *flowchart_token_char
+
+  flowchart_callback_name_action = flowchart_bare_token [ sp flowchart_quoted_run ]
+
+  flowchart_click_action = flowchart_callback_action / flowchart_href_action / flowchart_link_action / flowchart_callback_name_action
+
+  flowchart_click_target = !%x22 1*( !( sp / newline ) ANY )
+
+  flowchart_click_statement = "click" as click_keyword 1*sp flowchart_click_target as click_target ( sp flowchart_click_action as click_action ) flowchart_statement_end
+
+  ## --- node shapes ----------------------------------------------------
+
+  flowchart_inline_comment_line = newline *flowchart_ls "%%" !"{" *( !newline ANY )
+
+  flowchart_quoted_label = %x22 *( flowchart_inline_comment_line / ( !"%%{" !%x22 ANY ) ) %x22
+
+  flowchart_shape_triple_circle = "(((" as open *( !")))" ANY ) as label ")))" as close
+
+  flowchart_shape_stadium = "([" as open *( !"])" ANY ) as label "])" as close
+
+  flowchart_shape_subroutine = "[[" as open *( !"]]" ANY ) as label "]]" as close
+
+  flowchart_shape_cylindrical = "[(" as open *( !")]" ANY ) as label ")]" as close
+
+  flowchart_shape_double_circle = "((" as open *( !"))" ANY ) as label "))" as close
+
+  flowchart_shape_hexagon = "{{" as open *( !"}}" ANY ) as label "}}" as close
+
+  flowchart_shape_parallelogram = "[/" as open *( !"/]" ANY ) as label "/]" as close
+
+  flowchart_shape_parallelogram_alt = ( "[" %x5C ) as open *( !( %x5C "]" ) ANY ) as label ( %x5C "]" ) as close
+
+  flowchart_shape_trapezoid = "[/" as open *( !( %x5C "]" ) ANY ) as label ( %x5C "]" ) as close
+
+  flowchart_shape_trapezoid_alt = ( "[" %x5C ) as open *( !"/]" ANY ) as label "/]" as close
+
+  flowchart_shape_asymmetric = ">" as open *( !"]" ANY ) as label "]" as close
+
+  flowchart_shape_rectangle = "[" as open *( flowchart_quoted_label / ( !( "]" / ")" ) ANY ) ) as label "]" as close
+
+  flowchart_shape_rounded = "(" as open *( flowchart_quoted_label / flowchart_inline_comment_line / ( !( ")" / %x22 ) ANY ) ) as label ")" as close
+
+  flowchart_shape_rhombus = "{" as open *( !"}" ANY ) as label "}" as close
+
+  flowchart_node_shape = flowchart_shape_triple_circle / flowchart_shape_stadium / flowchart_shape_subroutine / flowchart_shape_cylindrical / flowchart_shape_double_circle / flowchart_shape_hexagon / flowchart_shape_parallelogram / flowchart_shape_parallelogram_alt / flowchart_shape_trapezoid / flowchart_shape_trapezoid_alt / flowchart_shape_asymmetric / flowchart_shape_rectangle / flowchart_shape_rounded / flowchart_shape_rhombus
+
+  ## --- nodes ----------------------------------------------------------
+
+  flowchart_metadata_comment_line = newline *flowchart_ls "%%" !"{" 1*( !newline ANY )
+
+  flowchart_metadata_quoted = %x22 *( flowchart_metadata_comment_line / ( !%x22 ANY ) ) %x22
+
+  flowchart_metadata_body = *( flowchart_metadata_comment_line / flowchart_metadata_quoted / ( !( %x22 / "}" / "^" ) ANY ) )
+
+  flowchart_node_metadata = "@{" flowchart_metadata_body as body "}" !( 1*flowchart_ls flowchart_edge_id_ahead )
+
+  flowchart_inline_class = ":::" flowchart_identifier
+
+  flowchart_dot_absent = !"."
+
+  flowchart_link_body = ( "--" *"-" ) / ( "==" *"=" ) / ( ["-"] 1*"." "-" )
+
+  flowchart_flush_link_marker = ( "x" / "o" ) flowchart_link_body
+
+  flowchart_node_with_shape = !flowchart_flush_link_marker flowchart_node_id as node_id ( flowchart_node_shape as shape / flowchart_dot_absent as shape ) [ flowchart_inline_class flowchart_dot_absent ] as inline_class [flowchart_node_metadata] as metadata
+
+  flowchart_amp_group = *( 1*sp "&" 1*sp !flowchart_reserved_keyword flowchart_node_with_shape )
+
+  ## --- links ----------------------------------------------------------
+
+  flowchart_link_start = "x" / "o" / "<"
+
+  flowchart_link_end_char = ">" / "x" / "o"
+
+  flowchart_invisible_link = "~~~" *"~"
+
+  flowchart_headed_link = flowchart_link_body flowchart_link_end_char
+
+  flowchart_long_link = ( "---" *"-" ) / ( "===" *"=" ) / ( ["-"] 1*"." "-" )
+
+  flowchart_visible_link = [flowchart_link_start] ( flowchart_headed_link / flowchart_long_link )
+
+  flowchart_arrow = ( flowchart_invisible_link / flowchart_visible_link ) as token
+
+  flowchart_pipe_label = "|" 1*( !"|" ANY ) as pipe_text "|"
+
+  flowchart_inline_blank = flowchart_inline_comment_line / flowchart_ls / %x0A / %x0D
+
+  flowchart_solid_close = "--" ( ">" / "x" / "o" / ( 1*"-" [ ">" / "x" / "o" ] ) )
+
+  flowchart_thick_close = "==" ( ">" / "x" / "o" / ( 1*"=" [ ">" / "x" / "o" ] ) )
+
+  flowchart_dotted_close = ["-"] 1*"." "-" [ ">" / "x" / "o" ]
+
+  flowchart_solid_closing = [flowchart_link_start] flowchart_solid_close
+
+  flowchart_thick_closing = [flowchart_link_start] flowchart_thick_close
+
+  flowchart_dotted_closing = [flowchart_link_start] flowchart_dotted_close
+
+  flowchart_solid_char = !"--" !flowchart_solid_closing !flowchart_inline_blank !%x22 !"%%{" ANY
+
+  flowchart_thick_char = !"=" !flowchart_thick_closing !flowchart_inline_blank !%x22 !"%%{" ANY
+
+  flowchart_dotted_char = !"." !flowchart_dotted_closing !flowchart_inline_blank !%x22 !"%%{" ANY
+
+  flowchart_solid_gap = 1*flowchart_inline_blank !flowchart_solid_closing
+
+  flowchart_thick_gap = 1*flowchart_inline_blank !flowchart_thick_closing
+
+  flowchart_dotted_gap = 1*flowchart_inline_blank !flowchart_dotted_closing
+
+  flowchart_solid_label = ( flowchart_quoted_label *( flowchart_solid_char / flowchart_solid_gap ) ) / ( flowchart_solid_char *( flowchart_solid_char / flowchart_solid_gap ) )
+
+  flowchart_thick_label = ( flowchart_quoted_label *( flowchart_thick_char / flowchart_thick_gap ) ) / ( flowchart_thick_char *( flowchart_thick_char / flowchart_thick_gap ) )
+
+  flowchart_dotted_label = ( flowchart_quoted_label *( flowchart_dotted_char / flowchart_dotted_gap ) ) / ( flowchart_dotted_char *( flowchart_dotted_char / flowchart_dotted_gap ) )
+
+  flowchart_inline_solid = ( [flowchart_link_start] "--" ) as open *flowchart_inline_blank flowchart_solid_label as label *flowchart_inline_blank flowchart_solid_closing as close
+
+  flowchart_inline_thick = ( [flowchart_link_start] "==" ) as open *flowchart_inline_blank flowchart_thick_label as label *flowchart_inline_blank flowchart_thick_closing as close
+
+  flowchart_inline_dotted = ( [flowchart_link_start] "-." ) as open *flowchart_inline_blank flowchart_dotted_label as label *flowchart_inline_blank flowchart_dotted_closing as close
+
+  flowchart_inline_label_edge = flowchart_inline_solid / flowchart_inline_thick / flowchart_inline_dotted
+
+  flowchart_piped_edge = flowchart_arrow as arrow ws [flowchart_pipe_label] as label
+
+  ## Edge ids: only an id without a further "@" in its run, which is the
+  ## case where Parslet's last-"@" search ends at the first one.
+  flowchart_edge_id_char = !( "@" / flowchart_ls / newline / %x22 ) ANY
+
+  flowchart_edge_id_link_start = [ "x" / "o" / "<" ] ( "--" / "==" / "-." / ( 1*"." "-" ) / "~~~" )
+
+  flowchart_link_opener = [ "x" / "o" / "<" ] ( "-" / "=" / "." / "~~~" )
+
+  flowchart_edge_id_ahead = &( !flowchart_edge_id_link_start 1*flowchart_edge_id_char "@" !( *flowchart_edge_id_char "@" ) flowchart_acc_gap flowchart_link_opener )
+
+  flowchart_edge_id_preempted = flowchart_reserved_word / ( "default" flowchart_word_boundary ) / ( "accTitle" ":" ) / ( "accDescr" ( ":" / "{" ) )
+
+  flowchart_edge_id_body = 1*flowchart_edge_id_char as edge_id "@" flowchart_acc_gap
+
+  flowchart_edge = ( ( 1*flowchart_ls !flowchart_edge_id_preempted flowchart_edge_id_ahead flowchart_edge_id_body ) / ws ) ( flowchart_piped_edge / flowchart_inline_label_edge ) ws !flowchart_reserved_keyword flowchart_node_with_shape as target flowchart_amp_group as group
+
+  flowchart_edge_chain = flowchart_edge *flowchart_edge
+
+  ## --- statements -----------------------------------------------------
+
+  flowchart_node_edge_statement = !flowchart_reserved_keyword flowchart_node_with_shape as node flowchart_amp_group as group [flowchart_edge_chain] as edges flowchart_loose_statement_end
+
+  flowchart_standalone_node = !flowchart_reserved_keyword flowchart_node_id as node_id flowchart_loose_statement_end
+
+  flowchart_statement = flowchart_accessibility_statement / flowchart_direction_statement / flowchart_subgraph_statement / flowchart_style_statement / flowchart_class_def_statement / flowchart_class_assignment_statement / flowchart_link_style_statement / flowchart_click_statement / flowchart_node_edge_statement / flowchart_standalone_node
+
+  flowchart_statements = 1*( ( flowchart_separator / flowchart_statement ) ws )
+
+  flowchart = ws flowchart_header ws [flowchart_statements] ws
+
+  entry flowchart: flowchart
+
+  test flowchart {
+    accept "graph TD"
+    accept "flowchart LR\n  A[Start] --> B{Ok}\n  B -->|yes| C"
+    accept "graph TD\nsubgraph s [T]\n  A --> B\nend"
+    accept "graph TD\nstyle A fill:#f9f,stroke:#333"
+    reject "graph TD\nA --> "
+    reject "graphTD"
+  }
+
+  ## ------------------------------------------------------------------
+  ## gantt (grammars/gantt.rb)
+  ## ------------------------------------------------------------------
+
+  gantt_text = 1*( !line_end ANY )
+
+  gantt_title = "title" 1*sp gantt_text as title line_end
+
+  gantt_date_format = "dateFormat" 1*sp gantt_text as date_format line_end
+
+  gantt_axis_format = "axisFormat" 1*sp gantt_text as axis_format line_end
+
+  gantt_tick_interval = "tickInterval" 1*sp gantt_text as tick_interval line_end
+
+  gantt_excludes = "excludes" 1*sp gantt_text as excludes line_end
+
+  gantt_weekend = "weekend" 1*sp gantt_text as weekend line_end
+
+  gantt_inclusive_end_dates = "inclusiveEndDates" as inclusive_end_dates line_end
+
+  gantt_today_marker = "todayMarker" 1*sp gantt_text as today_marker line_end
+
+  gantt_acc_title = "accTitle" *sp ":" *sp rest_of_line as acc_title line_end
+
+  gantt_acc_descr_single = "accDescr" *sp ":" *sp rest_of_line as acc_descr line_end
+
+  gantt_acc_descr_multi = "accDescr" *sp "{" ws *( !"}" ANY ) as acc_descr ws "}" line_end
+
+  gantt_section = "section" 1*sp gantt_text as section line_end
+
+  gantt_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  gantt_click_href = "href" 1*sp gantt_text as href
+
+  gantt_click_callback = "call" 1*sp gantt_text as callback
+
+  gantt_click = "click" 1*sp gantt_identifier as click_id 1*sp ( gantt_click_href / gantt_click_callback ) line_end
+
+  gantt_description = 1*( !":" !line_end ANY )
+
+  gantt_field = 1*( !"," !line_end ANY )
+
+  gantt_details = gantt_field as field *( *sp "," *sp gantt_field as field )
+
+  gantt_task = gantt_description as description *sp ":" *sp gantt_details as task_details line_end
+
+  gantt_statement = gantt_acc_title / gantt_acc_descr_single / gantt_acc_descr_multi / gantt_title / gantt_date_format / gantt_axis_format / gantt_tick_interval / gantt_excludes / gantt_weekend / gantt_inclusive_end_dates / gantt_today_marker / gantt_section / gantt_click / gantt_task as task_entry / comment line_end
+
+  gantt = ws "gantt" as header ws *( gantt_statement ws ) ws
+
+  entry gantt: gantt
+
+  test gantt {
+    accept "gantt"
+    accept "gantt\n  title T\n  dateFormat YYYY-MM-DD\n  section S\n  Task :a1, 2024-01-01, 3d"
+    accept "gantt\n  click a1 href http://x"
+    reject "gant"
+    reject "gantt\n  nonsense"
+  }
+
+  ## ------------------------------------------------------------------
+  ## gitgraph (grammars/git_graph.rb)
+  ## ------------------------------------------------------------------
+
+  gitgraph_nonspace = !( sp / %x0A / %x0D / %x0B / %x0C / "," ) ANY
+
+  gitgraph_plain_id = %x22 1*( !%x22 ANY ) as id %x22 / "'" 1*( !"'" ANY ) as id "'" / 1*gitgraph_nonspace as id
+
+  gitgraph_plain_tag = %x22 1*( !%x22 ANY ) as tag %x22 / "'" 1*( !"'" ANY ) as tag "'" / 1*gitgraph_nonspace as tag
+
+  gitgraph_plain_parent = %x22 1*( !%x22 ANY ) as parent %x22 / "'" 1*( !"'" ANY ) as parent "'" / 1*gitgraph_nonspace as parent
+
+  gitgraph_break = %x0A / %x0D / %x2028 / %x2029
+
+  gitgraph_escape = "\\" !gitgraph_break ANY
+
+  gitgraph_dq_message = %x22 *( gitgraph_escape / !( %x22 / "\\" ) ANY ) as message %x22
+
+  gitgraph_sq_message = "'" *( gitgraph_escape / !( "'" / "\\" ) ANY ) as message "'"
+
+  gitgraph_dq_name = %x22 *( gitgraph_escape / !( %x22 / "\\" ) ANY ) as name %x22
+
+  gitgraph_sq_name = "'" *( gitgraph_escape / !( "'" / "\\" ) ANY ) as name "'"
+
+  gitgraph_dq_branch = %x22 *( gitgraph_escape / !( %x22 / "\\" ) ANY ) as branch %x22
+
+  gitgraph_sq_branch = "'" *( gitgraph_escape / !( "'" / "\\" ) ANY ) as branch "'"
+
+  gitgraph_word = ALPHA / DIGIT / "_"
+
+  gitgraph_branch_name = gitgraph_word *( *( "." / "/" ) ( "-" / gitgraph_word ) )
+
+  gitgraph_new_name = *sp ( gitgraph_dq_name / gitgraph_sq_name ) / 1*sp gitgraph_branch_name as name
+
+  gitgraph_ref_name = *sp ( gitgraph_dq_branch / gitgraph_sq_branch ) / 1*sp gitgraph_branch_name as branch
+
+  gitgraph_commit_id = "id:" *sp gitgraph_plain_id
+
+  gitgraph_commit_type = "type:" *sp ( "NORMAL" / "REVERSE" / "HIGHLIGHT" ) as type
+
+  gitgraph_commit_tag = "tag:" *sp gitgraph_plain_tag
+
+  gitgraph_commit_message = "msg:" *sp ( gitgraph_dq_message / gitgraph_sq_message ) / gitgraph_dq_message / gitgraph_sq_message
+
+  gitgraph_commit_option = gitgraph_commit_id / gitgraph_commit_type / gitgraph_commit_tag / gitgraph_commit_message
+
+  gitgraph_commit_options = ( 1*sp / &( %x22 / "'" ) ) 1*( gitgraph_commit_option *sp )
+
+  gitgraph_commit_body = "commit" [ gitgraph_commit_options as options ]
+
+  gitgraph_commit = gitgraph_commit_body as commit line_end
+
+  gitgraph_order = "order:" *sp 1*DIGIT as order
+
+  gitgraph_branch_options = sp 1*( gitgraph_order *sp )
+
+  gitgraph_branch_body = "branch" gitgraph_new_name [ gitgraph_branch_options as options ]
+
+  gitgraph_branch = gitgraph_branch_body as branch line_end
+
+  gitgraph_checkout_body = "checkout" gitgraph_ref_name
+
+  gitgraph_checkout = gitgraph_checkout_body as checkout line_end
+
+  gitgraph_switch_body = "switch" gitgraph_ref_name
+
+  gitgraph_switch = gitgraph_switch_body as switch line_end
+
+  gitgraph_quoted = %x22 *( !%x22 ANY ) %x22 / "'" *( !"'" ANY ) "'"
+
+  gitgraph_merge_option = gitgraph_commit_id / gitgraph_commit_type / gitgraph_commit_tag / "random:" gitgraph_quoted
+
+  gitgraph_merge_options = sp 1*( gitgraph_merge_option *sp )
+
+  gitgraph_merge_body = "merge" gitgraph_ref_name [ gitgraph_merge_options as options ]
+
+  gitgraph_merge = gitgraph_merge_body as merge line_end
+
+  gitgraph_pick_id = "id:" *sp gitgraph_plain_id
+
+  gitgraph_pick_parent = "parent:" *sp gitgraph_plain_parent
+
+  gitgraph_pick_option = gitgraph_pick_id / gitgraph_pick_parent / gitgraph_commit_tag
+
+  gitgraph_pick_options = 1*( gitgraph_pick_option *sp )
+
+  gitgraph_pick_body = "cherry-pick" 1*sp gitgraph_pick_options as options
+
+  gitgraph_cherry_pick = gitgraph_pick_body as cherry_pick line_end
+
+  gitgraph_acc_title = "accTitle" *sp ":" *sp rest_of_line as acc_title line_end
+
+  gitgraph_acc_descr_single = "accDescr" *sp ":" *sp rest_of_line as acc_descr line_end
+
+  gitgraph_acc_descr_multi = "accDescr" *( sp / newline ) "{" ws *( !"}" ANY ) as acc_descr "}" line_end
+
+  gitgraph_statement = gitgraph_commit / gitgraph_branch / gitgraph_checkout / gitgraph_switch / gitgraph_merge / gitgraph_cherry_pick / gitgraph_acc_title / gitgraph_acc_descr_single / gitgraph_acc_descr_multi
+
+  gitgraph_direction = ( "TB" / "LR" / "BT" ) as direction
+
+  gitgraph_header = "gitGraph" [ ( *sp gitgraph_direction *sp ":" / ":" ) ] ws
+
+  gitgraph = ws gitgraph_header [ 1*( gitgraph_statement ws ) as statements ] ws
+
+  entry gitgraph: gitgraph
+
+  test gitgraph {
+    accept "gitGraph"
+    accept "gitGraph:\n commit\n branch dev\n checkout dev\n commit id: \"a\"\n"
+    accept "gitGraph LR:\n commit"
+    reject "gitGraph LR\n commit"
+    reject "Graph"
+  }
+
+  ## ------------------------------------------------------------------
   ## info (grammars/info.rb)
   ## ------------------------------------------------------------------
 
@@ -47,6 +1033,206 @@ grammar Mermaid version "0.1.0" edition 2 {
   info = ws "info" as header [ 1*sp info_flag ] ws [ 1*info_body_line as body ] ws
 
   entry info: info
+
+  test info {
+    accept "info"
+    accept "info showInfo"
+    accept "info\nshowInfo"
+    reject "inf"
+    reject "info other"
+    capture "info showInfo" { header: "info"
+      show_info: "showInfo" }
+  }
+
+  ## ------------------------------------------------------------------
+  ## kanban (grammars/kanban.rb)
+  ## ------------------------------------------------------------------
+
+  ## JS \s without the line feed: runs on one line.
+  kanban_line_space = %x09 / %x0B / %x0C / %x20 / %xA0 / %x1680 / %x2000-200A / %x2028 / %x2029 / %x202F / %x205F / %x3000 / %xFEFF
+
+  kanban_hspace = %x09 / %x0B / %x0C / %x20 / %xA0 / %x1680 / %x2000-200A / %x202F / %x205F / %x3000 / %xFEFF
+
+  kanban_line_sep = %x2028 / %x2029
+
+  ## Runs are written as positive character classes: the engine scans
+  ## those in linear time, but not a negated ANY.
+  kanban_not_lf = %x00-09 / %x0B-10FFFF
+
+  kanban_not_comment_end = %x00-09 / %x0B-2027 / %x202A-10FFFF
+
+  kanban_not_crlf = %x00-09 / %x0B-0C / %x0E-10FFFF
+
+  kanban_not_quote_lf = %x00-09 / %x0B-21 / %x23-10FFFF
+
+  kanban_not_body_end = %x00-09 / %x0B-21 / %x23-5D / %x5F-7C / %x7E-10FFFF
+
+  kanban_word_char = ALPHA / DIGIT / "_"
+
+  kanban_identifier = ( ALPHA / "_" ) *kanban_word_char
+
+  kanban_comment_body = *( kanban_not_comment_end )
+
+  kanban_comment = "%%" kanban_comment_body
+
+  kanban_rest = *( kanban_not_lf )
+
+  kanban_comment_line_start = "%%" !"{" kanban_rest
+
+  kanban_comment_line = *kanban_line_space "%%" !"{" kanban_rest ( newline / eof )
+
+  kanban_empty_line = *kanban_line_space newline
+
+  kanban_blank_text_run = 1*( kanban_empty_line / kanban_comment_line )
+
+  kanban_blank_lines_left = newline [kanban_blank_text_run] *kanban_line_space eof / eof
+
+  kanban_comment_end = newline / kanban_line_sep *kanban_line_space ( kanban_comment_line_start kanban_blank_lines_left / kanban_blank_lines_left ) / eof
+
+  kanban_line_end = *kanban_hspace kanban_comment kanban_comment_end / *kanban_line_space ( newline / eof )
+
+  kanban_icon_keyword = "::" ( "i" / "I" ) ( "c" / "C" ) ( "o" / "O" ) ( "n" / "N" ) "("
+
+  kanban_empty_class_modifier = ":::" &kanban_blank_lines_left
+
+  kanban_no_op_modifier_line = *sp ( kanban_icon_keyword ")" kanban_line_end / kanban_empty_class_modifier )
+
+  kanban_blank_run = 1*( kanban_empty_line / kanban_comment_line / kanban_no_op_modifier_line )
+
+  kanban_icon_modifier = kanban_icon_keyword 1*( !")" ANY ) as icon ")"
+
+  kanban_class_modifier = ":::" 1*( kanban_not_comment_end ) as classes
+
+  kanban_modifier_line = *sp as indent ( kanban_icon_modifier / kanban_class_modifier ) kanban_line_end
+
+  kanban_reserved_token = ( "k" / "K" ) ( "a" / "A" ) ( "n" / "N" ) ( "b" / "B" ) ( "a" / "A" ) ( "n" / "N" ) !kanban_word_char
+
+  kanban_empty_quoted_fragments = *( "\"``\"" / "\"\"" )
+
+  kanban_markdown_body = "`" *( !%x22 !"`" ANY ) "`" %x22
+
+  kanban_labelled_text = kanban_empty_quoted_fragments ( %x22 !kanban_markdown_body 1*( !%x22 ANY ) as text %x22 / !( %x22 kanban_markdown_body ) 1*( !"]" ANY ) as text ) kanban_empty_quoted_fragments
+
+  kanban_round_text = kanban_empty_quoted_fragments ( %x22 !kanban_markdown_body 1*( !%x22 ANY ) as text %x22 / !%x22 1*( !"(" !")" !"]" !"}" ANY ) as text ) kanban_empty_quoted_fragments
+
+  kanban_labelled_item = kanban_identifier as id "[" kanban_labelled_text "]"
+
+  kanban_shaped_item = kanban_identifier as id "(" kanban_round_text ")"
+
+  kanban_unlabelled_shaped_item = "(" kanban_round_text ")"
+
+  kanban_bare_item = kanban_identifier as id !( *sp ( "%%" / kanban_line_space ) )
+
+  kanban_metadata_comment_line = newline *kanban_line_space "%%" !"{" 1*( kanban_not_crlf )
+
+  kanban_metadata_quoted = %x22 *( kanban_metadata_comment_line / 1*( kanban_not_quote_lf ) / newline ) %x22
+
+  kanban_blank_line_run = 1*( newline &newline )
+
+  kanban_metadata_body = *( 1*( kanban_not_body_end ) / kanban_blank_line_run / kanban_metadata_comment_line / kanban_metadata_quoted / newline )
+
+  kanban_metadata = "@" *sp "{" kanban_metadata_body as body "}"
+
+  kanban_item = !kanban_reserved_token ( kanban_labelled_item / kanban_shaped_item / kanban_unlabelled_shaped_item / kanban_bare_item ) [ kanban_metadata as metadata ]
+
+  kanban_item_line = *%x20 as indent kanban_item kanban_line_end
+
+  kanban_content_line = kanban_blank_run / kanban_modifier_line / kanban_item_line
+
+  kanban = *sp "kanban" ( newline / eof ) *kanban_content_line as lines *kanban_line_space
+
+  entry kanban: kanban
+
+  test kanban {
+    accept "kanban\n  todo[Todo]\n    t1[Task]@{ assigned: 'a' }\n    ::icon(fa)\n    :::hot\n"
+    accept "kanban\n"
+    reject "kanban\n  kanban[X]"
+    reject "kanban root"
+  }
+
+  ## ------------------------------------------------------------------
+  ## mindmap (grammars/mindmap.rb)
+  ## ------------------------------------------------------------------
+
+  mindmap_word_char = ALPHA / DIGIT / "_"
+
+  mindmap_comment_indent = %x09 / %x0A / %x0B / %x0C / %x0D / %x20 / %xA0 / %x1680 / %x2000-200A / %x2028 / %x2029 / %x202F / %x205F / %x3000 / %xFEFF
+
+  mindmap_icon = "::icon(" 1*( !")" ANY ) as icon ")"
+
+  mindmap_class = ":::" 1*( !%x0D !%x0A ANY ) as classes
+
+  mindmap_circle = "((" 1*( !")" ANY ) as content "))" "" as shape_circle
+
+  mindmap_bang = "))" 1*( !"(" ANY ) as content "((" "" as shape_bang
+
+  mindmap_cloud = ")" 1*( !"(" ANY ) as content "(" "" as shape_cloud
+
+  mindmap_hexagon = "{{" 1*( !"}" ANY ) as content "}}" "" as shape_hexagon
+
+  mindmap_square = "[" ( %x22 1*( !%x22 ANY ) as content %x22 / 1*( !"]" ANY ) as content ) "]" "" as shape_square
+
+  mindmap_round_comment_line = newline *mindmap_comment_indent "%%" !"{" *( !%x0D !%x0A ANY ) [newline]
+
+  mindmap_round_unquoted = 1*( mindmap_round_comment_line / !")" ANY ) as content
+
+  mindmap_round_quoted = 1*( mindmap_round_comment_line / !%x22 ANY ) as content
+
+  mindmap_round = "(" ( %x22 mindmap_round_quoted %x22 "" as round_quoted / mindmap_round_unquoted ) ")" "" as shape_round
+
+  mindmap_shaped = *mindmap_word_char ( mindmap_circle / mindmap_bang / mindmap_cloud / mindmap_hexagon / mindmap_square / mindmap_round )
+
+  mindmap_unterminated_opener = *( !%x0D !%x0A !"(" !"[" ANY ) ( "(" / "[" ) *( !%x0D !%x0A !")" !"]" ANY ) ( newline / eof )
+
+  mindmap_plain = !mindmap_unterminated_opener 1*( !%x0D !%x0A !":" ANY ) as content
+
+  mindmap_node = mindmap_icon / mindmap_class / mindmap_shaped / mindmap_plain
+
+  mindmap_node_line = *sp newline / *sp comment ( newline / eof ) / *sp as indent mindmap_node *sp [comment] ( newline / eof )
+
+  mindmap = *sp "mindmap" !mindmap_word_char !eof [ *sp comment ( newline / eof ) / *sp ( newline / eof ) ] [ 1*mindmap_node_line as nodes ] *sp
+
+  entry mindmap: mindmap
+
+  test mindmap {
+    accept "mindmap\n  root((R))\n    a\n    b[B]\n"
+    accept "mindmap\n"
+    reject "mindmapx\n  a"
+    reject "mindmap"
+  }
+
+  ## ------------------------------------------------------------------
+  ## packet (grammars/packet.rb)
+  ## ------------------------------------------------------------------
+
+  packet_text = 1*( !%x0A ANY )
+
+  packet_title_line = "title" sp packet_text as title newline
+
+  packet_bit = 1*DIGIT
+
+  packet_bit_range = packet_bit as bit_start [ "-" packet_bit as bit_end ]
+
+  packet_label = %x22 *( "\\" ANY / !( %x22 / "\\" ) ANY ) as label %x22
+
+  packet_field_line = packet_bit_range ":" *sp packet_label ( newline / eof )
+
+  packet_comment_line = comment newline
+
+  packet_empty_line = *sp newline
+
+  packet_statement = *sp ( packet_title_line / packet_field_line / packet_comment_line / packet_empty_line )
+
+  packet = "packet-beta" *sp [ newline *packet_statement as statements ]
+
+  entry packet: packet
+
+  test packet {
+    accept "packet-beta"
+    accept "packet-beta\n  title T\n  0-7: \"a\"\n  8: \"b\""
+    reject "packet-beta\n  0-7 \"a\""
+    reject "packet"
+  }
 
   ## ------------------------------------------------------------------
   ## pie (grammars/pie.rb)
@@ -85,13 +1271,662 @@ grammar Mermaid version "0.1.0" edition 2 {
     reject "pie\n  A : 1"
   }
 
-  test info {
-    accept "info"
-    accept "info showInfo"
-    accept "info\nshowInfo"
-    reject "inf"
-    reject "info other"
-    capture "info showInfo" { header: "info"
-      show_info: "showInfo" }
+  ## ------------------------------------------------------------------
+  ## quadrant (grammars/quadrant.rb)
+  ## ------------------------------------------------------------------
+
+  quadrant_text = 1*( !line_end ANY )
+
+  quadrant_name = 1*( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  quadrant_integer = 1*DIGIT
+
+  quadrant_float = quadrant_integer "." quadrant_integer
+
+  quadrant_title = "title" 1*sp quadrant_text as title line_end
+
+  quadrant_axis_label = dq_string / 1*( !"-->" !line_end ANY )
+
+  quadrant_x_axis = "x-axis" 1*sp quadrant_axis_label as x_axis_left *sp "-->" *sp quadrant_axis_label as x_axis_right line_end
+
+  quadrant_y_axis = "y-axis" 1*sp quadrant_axis_label as y_axis_bottom *sp "-->" *sp quadrant_axis_label as y_axis_top line_end
+
+  quadrant_label_line = "quadrant-" %x31-34 as quadrant_number 1*sp quadrant_text as quadrant_label line_end
+
+  quadrant_class_def = "classDef" 1*sp quadrant_name as class_name 1*sp *( !line_end ANY ) as class_style line_end
+
+  quadrant_color = "#" 3*8( DIGIT / %x61-66 / %x41-46 ) / 1*ALPHA
+
+  quadrant_param = "radius" *sp ":" *sp ( quadrant_float / quadrant_integer ) as radius / "color" *sp ":" *sp quadrant_color as color / "stroke-color" *sp ":" *sp quadrant_color as stroke_color / "stroke-width" *sp ":" *sp ( quadrant_float / quadrant_integer ) as stroke_width [ "px" ]
+
+  quadrant_styling = [ 1*sp quadrant_param *( *sp "," *sp quadrant_param ) ]
+
+  quadrant_coordinates = "[" *sp quadrant_float as x *sp "," *sp quadrant_float as y *sp "]"
+
+  quadrant_point = 1*( !":::" !":" ANY ) as label [ ":::" quadrant_name ] *sp ":" *sp quadrant_coordinates as coordinates quadrant_styling as styling line_end as data_point
+
+  quadrant_statement = quadrant_title / quadrant_x_axis / quadrant_y_axis / quadrant_label_line / quadrant_class_def / quadrant_point / comment line_end
+
+  quadrant = ws "quadrantChart" as header ws [ 1*( quadrant_statement ws ) as statements ] ws
+
+  entry quadrant: quadrant
+
+  test quadrant {
+    accept "quadrantChart"
+    accept "quadrantChart\n  title T\n  x-axis L --> R\n  quadrant-1 Q\n  A: [0.3, 0.7] radius: 10, color: #ff0000"
+    reject "quadrantChart\n  A: [3, 7]"
+  }
+
+  ## ------------------------------------------------------------------
+  ## radar (grammars/radar.rb)
+  ## ------------------------------------------------------------------
+
+  radar_text = 1*( !newline ANY )
+
+  radar_id = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  radar_label = "[" %x22 1*( !%x22 ANY ) as label %x22 "]"
+
+  radar_title = "title" sp radar_text as title line_end
+
+  radar_acc_title = "accTitle:" sp radar_text as acc_title line_end
+
+  radar_acc_descr = "accDescr:" sp radar_text as acc_descr line_end
+
+  radar_axis_item = *sp radar_id as id [ radar_label ] *sp
+
+  radar_axis = "axis" sp ( radar_axis_item *( "," radar_axis_item ) ) as axes line_end
+
+  radar_number = 1*DIGIT as value
+
+  radar_blank = *( sp / newline )
+
+  radar_positional = radar_blank radar_number *sp
+
+  radar_named = radar_blank radar_id as axis *sp [":"] *sp radar_number *sp
+
+  radar_values = "{" ( radar_named *( "," radar_named ) / radar_positional *( "," radar_positional ) ) as values radar_blank "}"
+
+  radar_curve = "curve" sp radar_id as id [ radar_label ] *sp radar_values line_end
+
+  radar_option = "ticks" sp 1*DIGIT as ticks line_end / "showLegend" sp ( "true" / "false" ) as show_legend line_end / "graticule" sp ( "polygon" / "circular" ) as graticule line_end / "min" sp 1*DIGIT as min line_end / "max" sp 1*DIGIT as max line_end
+
+  radar_statement = *sp ( radar_title / radar_acc_title / radar_acc_descr / radar_axis / radar_curve / radar_option / comment line_end / *sp newline )
+
+  radar = "radar-beta" *sp line_end *radar_statement as statements
+
+  entry radar: radar
+
+  test radar {
+    accept "radar-beta\n"
+    accept "radar-beta\n  title T\n  axis a, b[\"B\"]\n  curve c{1, 2}\n  curve d[\"D\"]{ a: 1, b: 2 }\n  ticks 3\n  showLegend true"
+    reject "radar-beta\n  bogus"
+  }
+
+  ## ------------------------------------------------------------------
+  ## requirement (grammars/requirement.rb)
+  ## ------------------------------------------------------------------
+
+  requirement_line_end = *sp ( [comment] newline / eof )
+
+  ## JS's \s: what mermaid's accTitle/accDescr lexer tokens use.
+  requirement_js_space = %x09 / %x0A / %x0B / %x0C / %x0D / %x20 / %xA0 / %x1680 / %x2000-200A / %x2028 / %x2029 / %x202F / %x205F / %x3000 / %xFEFF
+
+  requirement_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  requirement_acc_title = "accTitle" *requirement_js_space ":" *requirement_js_space 1*( !newline ANY ) as acc_title ( newline / eof )
+
+  requirement_acc_descr_single = "accDescr" *requirement_js_space ":" *requirement_js_space 1*( !newline ANY ) as acc_descr ( newline / eof )
+
+  requirement_acc_descr_multi = "accDescr" *requirement_js_space "{" *requirement_js_space *( !"}" ANY ) as acc_descr "}"
+
+  requirement_property_key = ( "id" / "text" / "risk" / "verifymethod" / "type" / "docref" ) as prop_key
+
+  requirement_property_value = 1*( !requirement_line_end ANY )
+
+  requirement_property = requirement_property_key as key ws ":" ws requirement_property_value as value requirement_line_end
+
+  requirement_properties = 1*( requirement_property ws )
+
+  requirement_name_list = requirement_identifier *( "," requirement_identifier )
+
+  requirement_shorthand = ":::" requirement_name_list
+
+  requirement_keyword = "functionalRequirement" / "interfaceRequirement" / "performanceRequirement" / "physicalRequirement" / "designConstraint" / "requirement"
+
+  requirement_requirement = requirement_keyword as req_type sp requirement_identifier as req_name [ ws requirement_shorthand as req_classes ] ws "{" ws [ requirement_properties as req_properties ] ws "}" requirement_line_end
+
+  requirement_element = "element" as elem_keyword sp requirement_identifier as elem_name [ ws requirement_shorthand as elem_classes ] ws "{" ws [ requirement_properties as elem_properties ] ws "}" requirement_line_end
+
+  requirement_relationship_type = ( "contains" / "copies" / "derives" / "satisfies" / "verifies" / "refines" / "traces" ) as type
+
+  requirement_relationship = requirement_identifier as rel_source ws "-" ws requirement_relationship_type as rel_type ws "->" ws requirement_identifier as rel_target requirement_line_end
+
+  requirement_style_targets = requirement_identifier *( "," ws requirement_identifier )
+
+  requirement_style_property = 1*( !requirement_line_end !"," ANY )
+
+  requirement_style_properties = requirement_style_property *( "," requirement_style_property )
+
+  requirement_style = "style" as style_keyword sp requirement_style_targets as style_targets sp requirement_style_properties as style_props requirement_line_end
+
+  requirement_class_def = "classDef" as classdef_keyword sp requirement_identifier as class_name ( sp requirement_style_property *( "," requirement_style_property ) ) as class_props requirement_line_end
+
+  requirement_class_assignment = "class" as class_keyword sp requirement_name_list as class_targets sp requirement_name_list as class_names requirement_line_end
+
+  requirement_statement = requirement_acc_title / requirement_acc_descr_single / requirement_acc_descr_multi / requirement_requirement / requirement_element / requirement_relationship / requirement_style / requirement_class_def / requirement_class_assignment
+
+  requirement = ws "requirementDiagram" as header ws [ 1*( requirement_statement ws ) as statements ] ws
+
+  entry requirement: requirement
+
+  test requirement {
+    accept "requirementDiagram"
+    accept "requirementDiagram\n  requirement r1 {\n    id: 1\n    text: t\n  }\n  element e {\n    type: sim\n  }\n  e - satisfies -> r1"
+    accept "requirementDiagram\n  accTitle: T\n  accDescr { d }\n  style r1 fill:#f9f\n  classDef c fill:red\n  class r1 c"
+    reject "requirementDiagram\n  bogus"
+  }
+
+  ## ------------------------------------------------------------------
+  ## sankey (grammars/sankey.rb)
+  ## ------------------------------------------------------------------
+
+  sankey_node_id = 1*( ALPHA / DIGIT / "_" / "-" )
+
+  sankey_value = 1*DIGIT [ "." 1*DIGIT ]
+
+  sankey_node_declaration = *sp sankey_node_id as node_id *sp "[" 1*( !"]" ANY ) as node_label "]" line_end
+
+  sankey_flow_entry = *sp sankey_node_id as source *sp "," *sp sankey_node_id as target *sp "," *sp sankey_value as value line_end
+
+  sankey_statement = sankey_node_declaration as node_declaration / sankey_flow_entry as flow_entry / comment line_end
+
+  sankey = ws "sankey-beta" as header ws [ 1*( sankey_statement ws ) as statements ] ws
+
+  entry sankey: sankey
+
+  test sankey {
+    accept "sankey-beta"
+    accept "sankey-beta\nA,B,10\nB,C,2.5"
+    accept "sankey-beta\nA [Alpha]\nA,B,1"
+    reject "sankey-beta\nA,B"
+    reject "sankey"
+  }
+
+  ## ------------------------------------------------------------------
+  ## sequence (grammars/sequence.rb)
+  ## ------------------------------------------------------------------
+
+  ## Runs are positive character classes: the engine scans those in
+  ## linear time, which a negated ANY does not get.
+  sequence_word_char = ALPHA / DIGIT / "_"
+
+  sequence_not_lf = %x00-09 / %x0B-10FFFF
+
+  ## not LF, CR, "#" or ";"
+  sequence_text_char = %x00-09 / %x0B-0C / %x0E-22 / %x24-3A / %x3C-10FFFF
+
+  ## not "#", ";" or LF
+  sequence_title_char = %x00-09 / %x0B-22 / %x24-3A / %x3C-10FFFF
+
+  ## not "+" "<" ">" "-" ":" LF CR "," ";"
+  sequence_tail_char = %x00-09 / %x0B-0C / %x0E-2A / %x2E-39 / %x3D / %x3F-10FFFF
+
+  ## not "+" "<" ">" "(" ")" "-"
+  sequence_plain_char = %x00-27 / %x2A / %x2C / %x2E-3B / %x3D / %x3F-10FFFF
+
+  ## not "+" "<" ">" "-"
+  sequence_actor_plain = %x00-2A / %x2C / %x2E-3B / %x3D / %x3F-10FFFF
+
+  sequence_char_ref = "#" 1*sequence_word_char ";"
+
+  sequence_trailing_comment = [ *sp "#" *sequence_not_lf ]
+
+  ## line_end, then ";", then a bare CR at the end; line_end's empty-capable
+  ## end-of-input arm goes last (the engine refuses an empty arm earlier).
+  sequence_boundary = sequence_trailing_comment ( [";"] *sp [comment] newline / ";" !( *sp eof ) / ( %x0D eof ) / [";"] *sp eof )
+
+  sequence_text_run = *( sequence_char_ref / 1*sequence_text_char )
+
+  sequence_rest_of_line = *sequence_not_lf line_end
+
+  sequence_comment_statement = "%" !"{" *( !line_end ANY ) line_end
+
+  sequence_hash_comment_statement = !sequence_char_ref "#" *( !line_end ANY ) line_end
+
+  sequence_title_statement = "title" ( ":" *sp / 1*sp ) *sequence_title_char sequence_boundary
+
+  sequence_acc_title_statement = "accTitle" *sp ":" sequence_rest_of_line
+
+  sequence_acc_descr_statement = "accDescr" *sp ":" sequence_rest_of_line
+
+  sequence_acc_descr_block = "accDescr" *sp "{" *( !"}" ANY ) "}" sequence_boundary
+
+  sequence_number = ( 1*DIGIT [ "." DIGIT [DIGIT] ] ) / ( "." DIGIT [DIGIT] )
+
+  sequence_numbering = sequence_number [ 1*sp sequence_number ]
+
+  sequence_autonumber_statement = "autonumber" [ 1*sp ( "off" / sequence_numbering ) ] sequence_boundary
+
+  sequence_metadata_statement = sequence_title_statement / sequence_acc_title_statement / sequence_acc_descr_block / sequence_acc_descr_statement / sequence_autonumber_statement
+
+  ## --- arrows ---------------------------------------------------------
+
+  sequence_dotted_arrow = "-->>" / "--|/" / "--|" %x5C / "--//" / "--" %x5C %x5C / "--x" / "--X" / "--)" / "-->"
+
+  sequence_solid_arrow = "->>" / "-|/" / "-|" %x5C / "-//" / "-" %x5C %x5C / "-x" / "-X" / "-)" / "->"
+
+  sequence_reversed_arrow = "/|--" / "/|-" / %x5C "|--" / %x5C "|-" / "//--" / "//-" / %x5C %x5C "--" / %x5C %x5C "-"
+
+  sequence_arrow_base = "<<-->>" / "<<->>" / sequence_dotted_arrow / sequence_solid_arrow / sequence_reversed_arrow
+
+  sequence_activation_suffix = *sp ( "+" / "-" )
+
+  sequence_arrow = sequence_arrow_base as arrow_base [ sequence_activation_suffix as activation ]
+
+  sequence_message_signal = ( "()" *sp sequence_arrow_base as arrow_base *sp [ "()" ] ) / ( sequence_arrow_base as arrow_base *sp "()" ) / sequence_arrow
+
+  ## --- actor names ----------------------------------------------------
+
+  sequence_alias_keyword = 1*sp "as" 1*sp
+
+  sequence_actor_stop = sequence_arrow_base / ":" / "," / ";" / "%%" / sequence_alias_keyword / "@{" / newline
+
+  sequence_actor_char = !sequence_actor_stop ( sequence_actor_plain / ( "-" !( "-" / sequence_arrow_base / ":" / "," / ";" / "%%" / sequence_alias_keyword / "@{" ) ) )
+
+  sequence_actor_lead = !( ")" / "|" / ">" / "/" ) sequence_actor_char
+
+  sequence_actor_name = ( sequence_char_ref / sequence_actor_lead ) *( sequence_char_ref / sequence_actor_char )
+
+  sequence_declaration_stop = "<" / ">" / ":" / "," / ";" / "%%" / "@" / newline
+
+  sequence_declaration_char = !sequence_declaration_stop ANY
+
+  sequence_declaration_lead = sequence_char_ref / ( !"#" sequence_declaration_char )
+
+  sequence_declaration_word_char = !( sequence_declaration_stop / sp ) ANY
+
+  sequence_declaration_word_lead = sequence_char_ref / ( !"#" sequence_declaration_word_char )
+
+  sequence_declaration_name = ( sequence_declaration_word_lead *( sequence_char_ref / sequence_declaration_word_char ) &sequence_alias_keyword ) / ( sequence_declaration_lead *( sequence_char_ref / sequence_declaration_char ) )
+
+  sequence_message_actor_stop = sequence_arrow_base / ":" / "," / ";" / "%%" / "@{" / "(" / ")" / newline
+
+  sequence_continuation_entry_stop = sequence_arrow_base / "--" / "-/" / "-" %x5C
+
+  sequence_message_actor_continuation = !sequence_continuation_entry_stop "-" 1*sequence_tail_char
+
+  sequence_message_actor_char = !sequence_message_actor_stop ( sequence_plain_char / ( "-" !( "-" / "/" / %x5C / sequence_message_actor_stop ) ) )
+
+  sequence_message_actor_lead_char = !sequence_message_actor_stop !"#" sequence_plain_char
+
+  sequence_lexed_number = ( 1*DIGIT [ "." DIGIT [DIGIT] ] ) / ( "." DIGIT [DIGIT] )
+
+  sequence_token_opener = ( "%" !"{" ) / ( sequence_lexed_number ( %x20 / %x0A ) )
+
+  sequence_message_actor_lead = sequence_char_ref / ( !( ")" / ">" / "/" / %x5C ) !sequence_token_opener sequence_message_actor_lead_char )
+
+  sequence_message_actor_run = sequence_char_ref / sequence_message_actor_continuation / ( !( "/" / %x5C ) sequence_message_actor_char )
+
+  sequence_fused_stop = ":" / "," / ";" / "%%" / "@{" / "(" / ")" / newline
+
+  sequence_message_actor_slash_fusion = !sequence_reversed_arrow ( "/" / %x5C ) *( sequence_char_ref / sequence_message_actor_continuation / ( !sequence_fused_stop sequence_plain_char ) )
+
+  sequence_message_actor_name = sequence_message_actor_lead *sequence_message_actor_run [ sequence_message_actor_slash_fusion ]
+
+  ## --- declarations ---------------------------------------------------
+
+  sequence_shape_metadata = "@{" 1*( !"}" !newline ANY ) "}"
+
+  sequence_declaration_identity = sequence_declaration_name as id [ sequence_shape_metadata as shape_metadata ] *sp
+
+  sequence_unquoted_label = 1*( sequence_char_ref / ( !line_end !";" ANY ) )
+
+  sequence_declaration_label = "as" 1*sp sequence_unquoted_label as label
+
+  sequence_participant_body = "participant" 1*sp sequence_declaration_identity [ sequence_declaration_label ]
+
+  sequence_actor_body = "actor" 1*sp sequence_declaration_identity [ sequence_declaration_label ]
+
+  sequence_participant_declaration = sequence_participant_body sequence_boundary "" as participant
+
+  sequence_actor_declaration = sequence_actor_body sequence_boundary "" as actor
+
+  sequence_create_statement = "create" as create 1*sp ( ( sequence_participant_body sequence_boundary "" as participant ) / ( sequence_actor_body sequence_boundary "" as actor ) )
+
+  sequence_destroy_statement = "destroy" 1*sp sequence_declaration_name as destroy sequence_boundary
+
+  sequence_links_statement = "links" 1*sp sequence_message_actor_name as links ":" sequence_text_run sequence_boundary
+
+  ## --- messages, notes, activation -------------------------------------
+
+  sequence_message_text = ":" *sp sequence_text_run as message_text
+
+  sequence_message = sequence_message_actor_name as from *sp sequence_message_signal as arrow *sp sequence_message_actor_name as to *sp sequence_message_text as text sequence_boundary
+
+  sequence_note_position = ( "left" 1*sp "of" ) as left_of / ( "right" 1*sp "of" ) as right_of / "over" as over
+
+  sequence_note_participant = sequence_actor_name as participant
+
+  sequence_note_participants = sequence_note_participant *( *sp "," *sp sequence_note_participant )
+
+  sequence_note_statement = ( "note" / "Note" ) 1*sp sequence_note_position as position 1*sp sequence_note_participants as participants *sp ":" *sp sequence_text_run as note_text sequence_boundary
+
+  sequence_activation_command = "activate" 1*sp sequence_actor_name as activate line_end
+
+  sequence_deactivation_command = "deactivate" 1*sp sequence_actor_name as deactivate line_end
+
+  ## --- blocks ---------------------------------------------------------
+
+  sequence_box_statement = "box" 1*sp sequence_text_run as box_label sequence_boundary ws sequence_statements as box_statements ws "end" line_end
+
+  sequence_loop_structure = "loop" *sp sequence_text_run as loop_label sequence_boundary ws sequence_statements as loop_statements ws "end" line_end
+
+  sequence_alt_structure = "alt" *sp sequence_text_run as alt_label sequence_boundary ws sequence_statements as alt_statements ws *( "else" *sp sequence_text_run as else_label sequence_boundary ws sequence_statements as else_statements ws ) as else_blocks "end" line_end
+
+  sequence_opt_structure = "opt" !sequence_word_char *sp sequence_text_run as opt_label sequence_boundary ws sequence_statements as opt_statements ws "end" line_end
+
+  sequence_rect_structure = "rect" !sequence_word_char *sp sequence_text_run as rect_label sequence_boundary ws sequence_statements as rect_statements ws "end" line_end
+
+  sequence_par_structure = "par" *sp sequence_text_run as par_label sequence_boundary ws sequence_statements as par_statements ws *( "and" *sp sequence_text_run as and_label sequence_boundary ws sequence_statements as and_statements ws ) as and_blocks "end" line_end
+
+  sequence_critical_structure = "critical" *sp sequence_text_run as critical_label sequence_boundary ws sequence_statements as critical_statements ws *( "option" *sp sequence_text_run as option_label sequence_boundary ws sequence_statements as option_statements ws ) as option_blocks "end" line_end
+
+  sequence_break_structure = "break" *sp sequence_text_run as break_label sequence_boundary ws sequence_statements as break_statements ws "end" line_end
+
+  sequence_control_structure = sequence_loop_structure / sequence_alt_structure / sequence_opt_structure / sequence_rect_structure / sequence_par_structure / sequence_critical_structure / sequence_break_structure
+
+  sequence_statement = sequence_comment_statement / sequence_hash_comment_statement / sequence_metadata_statement / sequence_create_statement / sequence_destroy_statement / sequence_links_statement / sequence_participant_declaration / sequence_actor_declaration / sequence_note_statement / sequence_box_statement / sequence_activation_command / sequence_deactivation_command / sequence_control_structure / sequence_message
+
+  sequence_statements = 1*( sequence_statement ws *( ";" ws ) )
+
+  sequence = ws "sequenceDiagram" as header [";"] ws [ sequence_statements as statements ] ws
+
+  entry sequence: sequence
+
+  test sequence {
+    accept "sequenceDiagram"
+    accept "sequenceDiagram\n  participant A\n  A->>B: hi"
+    accept "sequenceDiagram\n  loop L\n    A->>B: m\n  end"
+    accept "sequenceDiagram\n  Note over A,B: n"
+    reject "sequenceDiagram\n  A->>B"
+    reject "sequencediagram"
+  }
+
+  ## ------------------------------------------------------------------
+  ## state_diagram (grammars/state_diagram.rb)
+  ## ------------------------------------------------------------------
+
+  state_diagram_name = 1*( ALPHA / DIGIT / "_" )
+
+  state_diagram_line_char = !line_end ANY
+
+  state_diagram_arrow = "-->" as arrow
+
+  state_diagram_quoted_id = %x22 *( "\\" ANY / !%x22 ANY ) %x22 / "'" *( "\\" ANY / !"'" ANY ) "'"
+
+  state_diagram_label_string = %x22 *( !%x22 ANY ) as string %x22
+
+  state_diagram_id = dq_string / sq_string / state_diagram_name
+
+  state_diagram_reserved = ( %i"classDef" / %i"class" / %i"click" / %i"href" / %i"scale" / %i"default" / %i"note" / %i"state" / %i"style" ) !( ALPHA / DIGIT / "_" )
+
+  state_diagram_marker = "<<" ( "choice" / "fork" / "join" ) as marker_type ">>"
+
+  state_diagram_direction_value = ( "TB" / "BT" / "LR" / "RL" ) as dir_value
+
+  state_diagram_direction = "direction" 1*sp state_diagram_direction_value as direction line_end
+
+  state_diagram_header_direction = *sp state_diagram_direction
+
+  state_diagram_header = ( "stateDiagram-v2" / "stateDiagram" ) as header
+
+  state_diagram_empty = "state" as keyword line_end
+
+  state_diagram_marker_target = 1*( !( *sp state_diagram_marker line_end ) state_diagram_line_char )
+
+  state_diagram_marker_declaration = state_diagram_marker_target as state_id *sp state_diagram_marker as marker
+
+  state_diagram_target = !( %x22 %x22 ) state_diagram_label_string as state_label 1*sp "as" 1*sp ( state_diagram_quoted_id / state_diagram_name ) as state_id / state_diagram_id as state_id
+
+  state_diagram_description = ":" *sp 1*( !"{" state_diagram_line_char ) as description
+
+  state_diagram_composite_statements = 1*( state_diagram_composite_statement ws )
+
+  state_diagram_composite_body = "{" ws [ state_diagram_composite_statements ] ws "}"
+
+  state_diagram_declaration = "state" as keyword 1*sp ( state_diagram_marker_declaration / state_diagram_target *sp [ state_diagram_description / state_diagram_composite_body as composite ] ) line_end
+
+  state_diagram_style_targets = state_diagram_name *( "," *sp state_diagram_name )
+
+  state_diagram_style = "style" as style_keyword 1*sp state_diagram_style_targets as style_targets [ 1*sp 1*state_diagram_line_char as style_props ] line_end
+
+  state_diagram_end = "[*]" / !state_diagram_reserved state_diagram_id
+
+  state_diagram_transition_label = *sp ":" *sp 1*( !"-->" state_diagram_line_char ) as label_text
+
+  state_diagram_transition = state_diagram_end as from *sp state_diagram_arrow *sp state_diagram_end as to [ state_diagram_transition_label as label ] *( *sp state_diagram_arrow *sp state_diagram_end as chain_to ) as chain line_end
+
+  state_diagram_note_head = "note" as note_keyword 1*sp ( "left" / "right" ) as position sp "of" 1*sp state_diagram_id as note_target *sp
+
+  state_diagram_note = state_diagram_note_head ":" *sp 1*state_diagram_line_char as note_text line_end
+
+  state_diagram_note_end = *sp "end note" line_end
+
+  state_diagram_note_body = *( !state_diagram_note_end *( !newline ANY ) newline )
+
+  state_diagram_note_block = state_diagram_note_head newline state_diagram_note_body as note_text state_diagram_note_end
+
+  state_diagram_floating_note = "note" as note_keyword 1*sp !( %x22 %x22 ) dq_string as note_text 1*sp "as" 1*sp state_diagram_id as note_id line_end
+
+  state_diagram_description_end = *sp ( newline / eof )
+
+  state_diagram_bare_description = ":" !( newline / eof ) *sp [ 1*( !state_diagram_description_end ANY ) as description ]
+
+  state_diagram_standalone = !state_diagram_reserved state_diagram_id as state_id [ *sp state_diagram_bare_description ] line_end
+
+  state_diagram_statement = state_diagram_direction / state_diagram_style / state_diagram_empty / state_diagram_declaration / state_diagram_note_block / state_diagram_floating_note / state_diagram_note / state_diagram_transition / state_diagram_standalone
+
+  state_diagram_composite_statement = "--" as concurrent_sep line_end / state_diagram_statement
+
+  state_diagram_statements = 1*( state_diagram_statement ws )
+
+  state_diagram = ws state_diagram_header !state_diagram_header_direction ws [ state_diagram_statements ] ws
+
+  entry state_diagram: state_diagram
+
+  test state_diagram {
+    accept "stateDiagram-v2"
+    accept "stateDiagram\n[*] --> A\nA --> [*]"
+    accept "stateDiagram-v2\nstate \"Idle mode\" as Idle\nstate C <<choice>>"
+    accept "stateDiagram-v2\nstate A {\n  B --> C\n  --\n  D\n}"
+    accept "stateDiagram-v2\nnote right of A : hi"
+    accept "stateDiagram-v2\nnote left of A\n  body\nend note"
+    reject "stateDiagram-v2 direction LR"
+    reject "stateDiagram-v2\nA --> class"
+    reject "state A"
+  }
+
+  ## ------------------------------------------------------------------
+  ## timeline (grammars/timeline.rb)
+  ## ------------------------------------------------------------------
+
+  ## ";" has no meaning in mmdc's timeline lexer, so line_end drops it.
+  timeline_line_end = *sp ( [comment] newline / eof )
+
+  timeline_rest = *( !timeline_line_end ANY )
+
+  timeline_title = "title" 1*sp 1*( !timeline_line_end ANY ) as title timeline_line_end
+
+  timeline_acc_title = "accTitle" *sp ":" *sp timeline_rest as acc_title timeline_line_end
+
+  timeline_acc_descr_single = "accDescr" *sp ":" *sp timeline_rest as acc_descr timeline_line_end
+
+  timeline_acc_descr_multi = "accDescr" *sp "{" ws *( !"}" ANY ) as acc_descr ws "}" timeline_line_end
+
+  timeline_section = "section" 1*sp 1*( !timeline_line_end ANY ) as section timeline_line_end
+
+  timeline_separator_colon = ":" ( %x20 / %x09 / %x0A / %x0D / %x0C / %x0B )
+
+  timeline_description_char = !timeline_separator_colon !timeline_line_end ANY
+
+  timeline_description = *sp 1*timeline_description_char *sp
+
+  timeline_descriptions = timeline_description as desc *( *sp ":" *sp timeline_description as desc )
+
+  timeline_time = 1*( !":" !timeline_line_end ANY )
+
+  timeline_event = *sp timeline_time as time *sp ":" timeline_descriptions as descriptions timeline_line_end
+
+  timeline_continuation = *sp ":" timeline_descriptions as descriptions timeline_line_end
+
+  timeline_task = 1*( !":" !"section" !"title" !"accTitle" !"accDescr" !timeline_line_end ANY ) as task timeline_line_end
+
+  timeline_statement = timeline_acc_title / timeline_acc_descr_single / timeline_acc_descr_multi / timeline_title / timeline_section / timeline_event as event_entry / timeline_continuation as continuation_entry / timeline_task / comment timeline_line_end
+
+  timeline = ws "timeline" as header ws [ 1*( timeline_statement ws ) as statements ] ws
+
+  entry timeline: timeline
+
+  test timeline {
+    accept "timeline"
+    accept "timeline\n  title T\n  section S\n  2002 : A\n  2004 : B : C\n  : D"
+    reject "timelin"
+  }
+
+  ## ------------------------------------------------------------------
+  ## treemap (grammars/treemap.rb)
+  ## ------------------------------------------------------------------
+
+  treemap_text = 1*( !newline ANY )
+
+  treemap_title = "title" 1*sp treemap_text as title
+
+  treemap_acc_title = "accTitle:" *sp treemap_text as acc_title
+
+  treemap_acc_descr = "accDescr" *sp [":"] *sp treemap_text as acc_descr
+
+  treemap_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "-" )
+
+  treemap_class_def = "classDef" 1*sp treemap_identifier as class_name 1*sp 1*( !";" ANY ) as class_styles [";"]
+
+  treemap_number = ["-"] 1*DIGIT [ "." 1*DIGIT ]
+
+  treemap_value = *sp ( ":" / "," ) *sp treemap_number as value
+
+  treemap_node_line = *%x20 as indent dq_string as label [ treemap_value ] [ ":::" treemap_identifier as css_class ] *sp ( [comment] ( newline / eof ) )
+
+  treemap_statement = treemap_title *sp / treemap_acc_title *sp / treemap_acc_descr *sp / treemap_class_def as class_def *sp / treemap_node_line as node / comment *sp / *sp newline
+
+  treemap = ( "treemap-beta" / "treemap" ) as keyword *sp newline *treemap_statement as statements *sp eof
+
+  entry treemap: treemap
+
+  test treemap {
+    accept "treemap\n"
+    accept "treemap-beta\ntitle T\n\"A\": 1\n  \"B\": 2\n"
+    reject "treemap"
+  }
+
+  ## ------------------------------------------------------------------
+  ## user_journey (parser/user_journey.rb UserJourneyGrammar)
+  ## ------------------------------------------------------------------
+
+  ## The Parslet grammar is LF-only and takes no leading blanks, comments
+  ## or ";" -- none of the prelude's ws / line_end applies here.
+  user_journey_end = %x0A / eof
+
+  user_journey_header = %s"journey" *sp user_journey_end
+
+  user_journey_text = 1*( !%x0A !":" ANY )
+
+  user_journey_title = *sp %s"title" 1*sp user_journey_text as text user_journey_end
+
+  user_journey_section = *sp %s"section" 1*sp user_journey_text as text user_journey_end
+
+  ## accTitle / accDescr match case-insensitively; their text is discarded.
+  user_journey_acc_line = *sp ( %i"accTitle" / %i"accDescr" ) *sp ":" *( !%x0A ANY ) user_journey_end
+
+  user_journey_acc_open = *sp %i"accDescr" *sp "{"
+
+  ## ECMAScript's four line terminators decide whether a "}" is content.
+  user_journey_acc_nl = %x0A / %x0D / %x2028 / %x2029
+
+  user_journey_acc_space = %x09 / %x0B / %x0C / %x20 / %xA0 / %x1680 / %x2000-200A / %x202F / %x205F / %x3000 / %xFEFF
+
+  user_journey_acc_directive = user_journey_acc_nl *user_journey_acc_space "%%{" *( !user_journey_acc_nl !"}%%" ANY ) "}%%"
+
+  user_journey_acc_comment = user_journey_acc_nl *user_journey_acc_space "%%" !"{" *( !user_journey_acc_nl ANY )
+
+  user_journey_acc_body = *( 1*( !"}" !user_journey_acc_nl ANY ) / user_journey_acc_directive / user_journey_acc_comment / ( !"}" ANY ) )
+
+  user_journey_acc_block = user_journey_acc_open user_journey_acc_body "}"
+
+  user_journey_acc_unclosed = user_journey_acc_open user_journey_acc_body !ANY
+
+  user_journey_task_text = 1*( !":" !%x0A ANY )
+
+  user_journey_actor = 1*( !"," !%x0A ANY )
+
+  user_journey_actors = [ user_journey_actor *( *sp "," *sp user_journey_actor ) ]
+
+  user_journey_task = *sp user_journey_task_text as name ":" *sp 1*DIGIT as score [ *sp ":" *sp user_journey_actors as actors ] *sp user_journey_end
+
+  user_journey_comment = *sp "%%" *( !%x0A ANY ) %x0A
+
+  user_journey_blank = *sp %x0A
+
+  user_journey_line = user_journey_title as title / user_journey_section as section / user_journey_acc_block / user_journey_acc_line / !user_journey_acc_unclosed user_journey_task as task / user_journey_comment / user_journey_blank
+
+  user_journey = user_journey_header *user_journey_line
+
+  entry user_journey: user_journey
+
+  test user_journey {
+    accept "journey"
+    accept "journey\n  title T\n  section S\n    Task: 5: Me, You\n"
+    accept "journey\n  accDescr {\n  x\n  }\n"
+    reject "Journey"
+    reject "journey\n  title a: x"
+  }
+
+  ## ------------------------------------------------------------------
+  ## xychart (grammars/xy_chart.rb)
+  ## ------------------------------------------------------------------
+
+  xychart_integer = 1*DIGIT
+
+  xychart_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
+
+  xychart_axis_value = *sp ( xychart_integer as value / xychart_identifier as value ) *sp
+
+  xychart_axis_values = "[" xychart_axis_value *( "," xychart_axis_value ) "]"
+
+  xychart_number_value = *sp ( xychart_integer [ "." 1*DIGIT ] ) as value *sp
+
+  xychart_value_array = "[" xychart_number_value *( "," xychart_number_value ) "]"
+
+  xychart_title_line = "title" sp dq_string as title line_end
+
+  xychart_x_axis_line = "x-axis" [ sp dq_string as x_label ] sp xychart_axis_values as x_values line_end
+
+  xychart_y_axis_line = "y-axis" [ sp dq_string as y_label ] sp xychart_integer as y_min sp "-->" sp xychart_integer as y_max line_end
+
+  xychart_line_dataset = "line" sp xychart_value_array as line_values line_end
+
+  xychart_bar_dataset = "bar" sp xychart_value_array as bar_values line_end
+
+  xychart_named_dataset = "dataset" sp dq_string as dataset_label sp xychart_value_array as dataset_values line_end
+
+  xychart_statement = *sp ( xychart_title_line / xychart_x_axis_line / xychart_y_axis_line / xychart_line_dataset / xychart_bar_dataset / xychart_named_dataset / comment newline / *sp newline )
+
+  xychart = "xychart-beta" *sp line_end *xychart_statement as statements
+
+  entry xychart: xychart
+
+  test xychart {
+    accept "xychart-beta\n"
+    accept "xychart-beta\n  title \"T\"\n  x-axis [a, b]\n  y-axis 0 --> 10\n  line [1, 2.5]\n  bar [3, 4]"
+    reject "xychart-beta\n  bogus"
   }
 }

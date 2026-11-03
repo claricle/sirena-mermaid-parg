@@ -25,7 +25,7 @@ CI installs the released `parsanol` gem and runs, on every push/PR:
 
 * `parsanol parg test mermaid.parg` — the embedded accept/reject tests
 * a fresh compile checked for *payload parity* against the committed
-  artifact (envelope `checksum` and `compiler_version` stripped)
+  artifact (envelope `checksum`, `compiler_version` and `unicode_tables` stripped; the last is the Ruby build stamp, e.g. "onigmo (Ruby 3.4.8)")
 
 == How sirena uses it
 

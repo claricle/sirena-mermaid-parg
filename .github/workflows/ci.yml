@@ -30,7 +30,10 @@ jobs:
               j.delete("compiler_version")
               j
             end
-            unless strip.call("mermaid.json") == strip.call("/tmp/fresh.json")
+            a = strip.call("mermaid.json"); b = strip.call("/tmp/fresh.json")
+            unless a == b
+              (a.keys | b.keys).each { |k| puts "differs: #{k}" unless a[k] == b[k] }
+              puts "ruby #{RUBY_VERSION}"
               abort "artifact payload drift: regenerate mermaid.json with the released parsanol"
             end
             puts "payload parity OK"

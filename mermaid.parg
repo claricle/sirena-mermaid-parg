@@ -1,0 +1,97 @@
+# Mermaid grammar -- PARG source (parsanol grammar language).
+# Extraction target: the hand-written Parslet grammars in
+# claricle/sirena lib/sirena/parser/grammars/*.rb -- the rules below mirror
+# those grammars rule for rule (same whitespace set, same line_end, same
+# quoting rules), so the native path and the Ruby fallback accept the same
+# language. One entry per diagram type; sirena routes by diagram keyword
+# and falls back to the Parslet grammar for every type not yet here and for
+# every input an entry here rejects (so error messages stay positioned).
+# Compile: parsanol parg compile mermaid.parg -o mermaid.json
+
+grammar Mermaid version "0.1.0" edition 2 {
+
+  ## ------------------------------------------------------------------
+  ## Common (grammars/common.rb)
+  ## ------------------------------------------------------------------
+
+  ## space: a blank within a line.
+  sp = %x20 / %x09
+
+  newline = %x0A / %x0D.0A
+
+  ## comment: "%%" to end of line (a lone CR stays in the comment).
+  comment = "%%" *( !%x0A ANY )
+
+  ws = *( sp / newline / comment )
+
+  eof = !ANY
+
+  ## line_end: optional ";", trailing blanks, then an optional comment
+  ## and a newline, or end of input.
+  line_end = [";"] *sp ( [comment] newline / eof )
+
+  rest_of_line = *( !line_end ANY )
+
+  dq_string = %x22 *( "\\" ANY / !%x22 ANY ) as string %x22
+
+  sq_string = "'" *( "\\" ANY / !"'" ANY ) as string "'"
+
+  ## ------------------------------------------------------------------
+  ## info (grammars/info.rb)
+  ## ------------------------------------------------------------------
+
+  info_flag = "showInfo" as show_info
+
+  info_body_line = *sp info_flag line_end
+
+  info = ws "info" as header [ 1*sp info_flag ] ws [ 1*info_body_line as body ] ws
+
+  entry info: info
+
+  ## ------------------------------------------------------------------
+  ## pie (grammars/pie.rb)
+  ## ------------------------------------------------------------------
+
+  pie_title_text = *( !line_end ANY )
+
+  pie_title = "title" ( ":" / 1*sp ) pie_title_text as text
+
+  pie_header = "pie" [ 1*sp "showData" as show_data ] [ 1*sp pie_title as title ] ws
+
+  pie_acc_title = "accTitle" [sp] ":" [sp] rest_of_line as text line_end
+
+  pie_acc_descr_single = "accDescr" [sp] ":" [sp] rest_of_line as text line_end
+
+  pie_acc_descr_multi = "accDescr" [sp] "{" ws *( !"}" ANY ) as text ws "}" line_end
+
+  pie_standalone_title = *sp "title" 1*sp pie_title_text as text line_end
+
+  pie_label = dq_string / sq_string
+
+  pie_number = ["-"] ( 1*DIGIT "." 1*DIGIT / 1*DIGIT )
+
+  pie_entry = *sp pie_label as label *sp ":" *sp pie_number as value line_end
+
+  pie_statement = pie_acc_title as acc_title / pie_acc_descr_single as acc_descr / pie_acc_descr_multi as acc_descr / pie_standalone_title as standalone_title / pie_entry as entry / comment line_end
+
+  pie = ws pie_header *( pie_statement ws ) ws
+
+  entry pie: pie
+  
+  test pie {
+    accept "pie"
+    accept "pie showData title Pets"
+    accept "pie\n  \"A\" : 1\n  \"B\" : 2.5"
+    reject "pie\n  A : 1"
+  }
+
+  test info {
+    accept "info"
+    accept "info showInfo"
+    accept "info\nshowInfo"
+    reject "inf"
+    reject "info other"
+    capture "info showInfo" { header: "info"
+      show_info: "showInfo" }
+  }
+}

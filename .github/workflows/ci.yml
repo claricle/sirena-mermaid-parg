@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  grammar:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - run: gem install parsanol -v 1.3.130 --no-document
+      - name: Grammar tests (embedded accept/reject)
+        run: parsanol parg test mermaid.parg
+      - name: Compile and verify committed artifact payload
+        run: |
+          parsanol parg compile mermaid.parg -o /tmp/fresh.json
+          ruby -rjson -e '
+            strip = lambda do |f|
+              j = JSON.parse(File.read(f))
+              j.delete("checksum")
+              j.delete("compiler_version")
+              j.delete("unicode_tables")
+              j
+            end
+            a = strip.call("mermaid.json"); b = strip.call("/tmp/fresh.json")
+            unless a == b
+              (a.keys | b.keys).each { |k| puts "differs: #{k}" unless a[k] == b[k] }
+              puts "ruby #{RUBY_VERSION}"
+              abort "artifact payload drift: regenerate mermaid.json with the released parsanol"
+            end
+            puts "payload parity OK"
+          '

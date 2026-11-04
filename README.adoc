@@ -1,0 +1,65 @@
+= sirena-mermaid-parg
+
+The Mermaid grammar in https://github.com/parsanol/parsanol-rs[PARG] —
+the parsanol grammar language (ABNF-flavoured, PEG semantics).
+
+This repository is the canonical home of the grammar and its compiled
+artifact; the https://github.com/claricle/sirena[sirena] gem consumes
+the artifact for its native parse path (claricle/sirena#342).
+
+== Layout
+
+* `mermaid.parg` — the grammar source (the contract). Each diagram type
+  is one entry; the rules mirror sirena's Parslet grammars
+  (`lib/sirena/parser/grammars/*.rb`) rule for rule.
+* `mermaid.json` — the compiled artifact (checksummed envelope),
+  compiled with the released parsanol:
++
+----
+parsanol parg compile mermaid.parg -o mermaid.json
+----
+
+== CI
+
+CI installs the released `parsanol` gem and runs, on every push/PR:
+
+* `parsanol parg test mermaid.parg` — the embedded accept/reject tests
+* a fresh compile checked for *payload parity* against the committed
+  artifact (envelope `checksum`, `compiler_version` and `unicode_tables` stripped; the last is the Ruby build stamp, e.g. "onigmo (Ruby 3.4.8)")
+
+== How sirena uses it
+
+sirena vendors `mermaid.json` and routes a diagram type to its entry
+when the parsanol engine loads. The native path is an accelerator only:
+input an entry rejects, an unreadable encoding, or a builder decline
+(for example Parslet's `"[]"` for an empty accessibility text) all fall
+back to the Parslet grammar, which stays the source of every positioned
+`ParseError`. Model parity is enforced in sirena's specs over the whole
+corpus plus an edge table. Set `SIRENA_NATIVE_PARSER=ruby` to force the
+fallback.
+
+== Status
+
+Entries: `info`, `pie`. The remaining diagram types (flowchart,
+sequence, class, state, ER, gantt, ...) still parse through Parslet in
+sirena and move here one entry at a time.
+
+== Benchmark
+
+Parse time, best of 5 (sirena `scripts/benchmark_native_parse.rb`,
+Apple silicon, Ruby 3.4.8, parsanol 1.3.130):
+
+[cols="2,1,1,1"]
+|===
+|input |Parslet |native |speedup
+
+|pie corpus (49 files) |48.2 ms |10.8 ms |4.5x
+|pie, 2000 slices |469 ms |121 ms |3.9x
+|info corpus (14 files) |1.9 ms |1.0 ms |1.8x
+|===
+
+== Runtime bindings
+
+The grammar is engine-neutral JSON. Ruby consumes it through
+`Parsanol::PARG::Artifact` (native Rust extension, pure-Ruby atom
+runtime as engine fallback). Other runtimes: see claricle/sirena#343.

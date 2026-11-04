@@ -31,6 +31,9 @@ jobs:
               j.delete("checksum")
               j.delete("compiler_version")
               j.delete("unicode_tables")
+              # byte_checksum hashes the serialized artifact, which embeds the Ruby
+              # build stamp above, so it moves with the Ruby version like checksum.
+              j.delete("byte_checksum")
               j
             end
             a = strip.call("mermaid.json"); b = strip.call("/tmp/fresh.json")

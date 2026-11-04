@@ -20,7 +20,7 @@ grammar Mermaid version "0.1.0" edition 2 {
   newline = %x0A / %x0D.0A
 
   ## comment: "%%" to end of line (a lone CR stays in the comment).
-  comment = "%%" *( !%x0A ANY )
+  comment = "%%" *( !( "\n" ) ANY )
 
   ws = *( sp / newline / comment )
 
@@ -30,11 +30,65 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## and a newline, or end of input.
   line_end = [";"] *sp ( [comment] newline / eof )
 
-  rest_of_line = *( !line_end ANY )
+  ## A run of blanks that does not end the line: one step of a text run,
+  ## where line_end would otherwise be tried at every blank.
+  le_mid = 1*sp !( [comment] newline / eof )
 
-  dq_string = %x22 *( "\\" ANY / !%x22 ANY ) as string %x22
+  ## Text runs are scanned with a negated string-literal lookahead, one
+  ## `1*( !( "a" / "b" ) ANY )`: the engine scans that in one pass. A run
+  ## whose stop is spelled with %x escapes, several lookaheads or a rule
+  ## builds its tree one character at a time (quadratic on long text), and
+  ## so does a char-by-char class repeat. Where a run stops at a rule such
+  ## as line_end, a literal scan covers the characters that cannot start the
+  ## stop and le_mid covers blanks inside the line; the stop's own lookahead
+  ## runs only at the few characters left.
+  ##
+  ## n_<hex>: one character that is not any of the listed ones ("T" is a
+  ## range, 2000T200A = 2000-200A), for the alternative that follows a scan
+  ## and has to take the single character the scan left.
 
-  sq_string = "'" *( "\\" ANY / !"'" ANY ) as string "'"
+  n_09_0A_0B_0C_0D_20_22_25_2D_2E_3C_6F_78_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF = %x00-08 / %x0E-1F / %x21 / %x23-24 / %x26-2C / %x2F-3B / %x3D-6E / %x70-77 / %x79-9F / %xA1-167F / %x1681-1FFF / %x200B-2027 / %x202A-202E / %x2030-205E / %x2060-2FFF / %x3001-FEFE / %xFF00-10FFFF
+
+  n_09_0A_0B_0C_0D_20_22_25_2D_3C_6F_78_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF = %x00-08 / %x0E-1F / %x21 / %x23-24 / %x26-2C / %x2E-3B / %x3D-6E / %x70-77 / %x79-9F / %xA1-167F / %x1681-1FFF / %x200B-2027 / %x202A-202E / %x2030-205E / %x2060-2FFF / %x3001-FEFE / %xFF00-10FFFF
+
+  n_09_0A_0B_0C_0D_20_22_25_3C_3D_6F_78_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF = %x00-08 / %x0E-1F / %x21 / %x23-24 / %x26-3B / %x3E-6E / %x70-77 / %x79-9F / %xA1-167F / %x1681-1FFF / %x200B-2027 / %x202A-202E / %x2030-205E / %x2060-2FFF / %x3001-FEFE / %xFF00-10FFFF
+
+  n_09_0A_0B_0C_0D_20_22_40_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF = %x00-08 / %x0E-1F / %x21 / %x23-3F / %x41-9F / %xA1-167F / %x1681-1FFF / %x200B-2027 / %x202A-202E / %x2030-205E / %x2060-2FFF / %x3001-FEFE / %xFF00-10FFFF
+
+  n_09_0A_0B_0C_0D_20_3B_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF = %x00-08 / %x0E-1F / %x21-3A / %x3C-9F / %xA1-167F / %x1681-1FFF / %x200B-2027 / %x202A-202E / %x2030-205E / %x2060-2FFF / %x3001-FEFE / %xFF00-10FFFF
+
+  n_09_0A_0D_20_25_2C_3A_3B_3C_3E_40 = %x00-08 / %x0B-0C / %x0E-1F / %x21-24 / %x26-2B / %x2D-39 / %x3D / %x3F / %x41-10FFFF
+
+  n_09_0A_0D_20_25_3A = %x00-08 / %x0B-0C / %x0E-1F / %x21-24 / %x26-39 / %x3B-10FFFF
+
+  n_09_0A_0D_20_25_3B = %x00-08 / %x0B-0C / %x0E-1F / %x21-24 / %x26-3A / %x3C-10FFFF
+
+  n_09_0A_0D_20_28_29_2D_3A_3B_3C_3D_3E_40_5B_5D_5E_7B_7C_7D_7E = %x00-08 / %x0B-0C / %x0E-1F / %x21-27 / %x2A-2C / %x2E-39 / %x3F / %x41-5A / %x5C / %x5F-7A / %x7F-10FFFF
+
+  n_0A_0D_25_2C_3A_3B_3C_3E_40 = %x00-09 / %x0B-0C / %x0E-24 / %x26-2B / %x2D-39 / %x3D / %x3F / %x41-10FFFF
+
+  n_0A_25_7B_7D = %x00-09 / %x0B-24 / %x26-7A / %x7C / %x7E-10FFFF
+
+  n_22 = %x00-21 / %x23-10FFFF
+
+  n_22_25 = %x00-21 / %x23-24 / %x26-10FFFF
+
+  n_22_29 = %x00-21 / %x23-28 / %x2A-10FFFF
+
+  n_22_5E_7D = %x00-21 / %x23-5D / %x5F-7C / %x7E-10FFFF
+
+  n_29 = %x00-28 / %x2A-10FFFF
+
+  n_29_5D = %x00-28 / %x2A-5C / %x5E-10FFFF
+
+  n_7D = %x00-7C / %x7E-10FFFF
+
+
+  rest_of_line = *( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY )
+
+  dq_string = %x22 *( "\\" ANY / 1*( !( "\"" / "\\" ) ANY ) ) as string %x22
+
+  sq_string = "'" *( "\\" ANY / 1*( !( "'" / "\\" ) ANY ) ) as string "'"
 
   ## ------------------------------------------------------------------
   ## architecture (grammars/architecture.rb)
@@ -44,7 +98,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   architecture_position = 1*( "L" / "R" / "T" / "B" )
 
-  architecture_text = 1*( !line_end ANY )
+  architecture_text = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY )
 
   architecture_title = "title" 1*sp architecture_text as title line_end
 
@@ -102,7 +156,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   block_columns = "columns" as columns_keyword sp block_integer as columns_value line_end
 
-  block_style_property = 1*( !line_end !"," ANY )
+  block_style_property = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / "," / ";" ) ANY ) / le_mid / !line_end !"," ANY )
 
   block_style_properties = block_style_property *( "," block_style_property )
 
@@ -166,7 +220,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   c4_compatibility_header = "C4 diagram" as header [ "$" "{" c4_identifier "}" / ";" ]
 
-  c4_title = "title" 1*sp 1*( !line_end !"$" ANY ) as title [c4_macro] line_end
+  c4_title = "title" 1*sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "$" / "%" / ";" ) ANY ) / le_mid / !line_end !"$" ANY ) as title [c4_macro] line_end
 
   c4_number = 1*DIGIT "." 1*DIGIT / 1*DIGIT
 
@@ -176,7 +230,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   c4_layout_config = "UpdateLayoutConfig" *sp "(" *sp c4_config_params as config_params *sp ")" line_end
 
-  c4_unquoted_param = !( "$" ( ALPHA / "_" ) ) 1*( !"," !")" !line_end ANY )
+  c4_unquoted_param = !( "$" ( ALPHA / "_" ) ) 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ")" / "," / ";" ) ANY ) / le_mid / !"," !")" !line_end ANY )
 
   c4_param_value = dq_string / c4_variable_or_identifier / c4_unquoted_param
 
@@ -232,7 +286,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   class_name_char = ALPHA / DIGIT / "_" / class_unicode_letter
 
-  class_rest = 1*( !line_end ANY )
+  class_rest = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY )
 
   class_direction_value = ( "TD" / "TB" / "LR" / "RL" / "BT" ) as dir_value
 
@@ -250,7 +304,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   class_ref = class_name as class_id [ *sp class_generic_params as generic ]
 
-  class_label_string = %x22 *( !%x22 ANY ) as string %x22
+  class_label_string = %x22 *( !( "\"" ) ANY ) as string %x22
 
   class_text_label = "[" *sp class_label_string *sp "]"
 
@@ -260,21 +314,21 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   class_member_end = *sp &( comment / newline / "}" / eof )
 
-  class_body_char = !( "%%" / %x0A / "{" / "}" ) ANY
+  class_body_char = n_0A_25_7B_7D / ( "%" !"%" )
 
-  class_body_text = !%x22 class_body_char *class_body_char class_member_end
+  class_body_text = !%x22 class_body_char *( 1*( !( "\n" / "%" / "{" / "}" ) ANY ) / class_body_char ) class_member_end
 
-  class_indented_quote_text = %x22 *class_body_char class_member_end
+  class_indented_quote_text = %x22 *( 1*( !( "\n" / "%" / "{" / "}" ) ANY ) / class_body_char ) class_member_end
 
-  class_annotation_text = 1*( !( ">>" class_member_end ) class_body_char )
+  class_annotation_text = 1*( 1*( !( "\n" / "%" / ">" / "{" / "}" ) ANY ) / !( ">>" class_member_end ) class_body_char )
 
   class_body_annotation = "<<" ( class_annotation_text as body_stereotype / "" as body_stereotype ) ">>" class_member_end
 
-  class_colon_annotation_text = 1*( !( ">>" class_member_end ) !( ":" / ";" ) class_body_char )
+  class_colon_annotation_text = 1*( 1*( !( "\n" / "%" / ":" / ";" / ">" / "{" / "}" ) ANY ) / !( ">>" class_member_end ) !( ":" / ";" ) class_body_char )
 
   class_colon_body_annotation = "<<" ( class_colon_annotation_text as body_stereotype / "" as body_stereotype ) ">>" class_member_end
 
-  class_colon_text = 1*( !( ":" / ";" / %x0A ) !line_end ANY )
+  class_colon_text = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ":" / ";" ) ANY ) / le_mid / !( ":" / ";" / %x0A ) !line_end ANY )
 
   class_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
 
@@ -338,7 +392,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   class_pipe_label = "|" 1*( !"|" ANY ) as label_text "|"
 
-  class_colon_label = *sp ":" *sp 1*( !line_end ANY ) as label_text
+  class_colon_label = *sp ":" *sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY ) as label_text
 
   class_relationship = class_name as from_id [ *sp class_generic_params as from_generic ] *sp [ class_cardinality as source_card ] *sp class_operator as operator *sp [ class_pipe_label as pipe_label ] *sp [ class_cardinality as target_card ] *sp class_name as to_id [ *sp class_generic_params as to_generic ] [ class_colon_label as colon_label ] line_end
 
@@ -372,9 +426,9 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   er_diagram_line_terminator = %x0A / %x0D / %x2028 / %x2029
 
-  ## Character classes spelled as ranges: the engine scans a class repeat
-  ## in one pass, but a `*( !x ANY )` repeat builds its tree one character
-  ## at a time (quadratic on a long note or tilde run).
+  ## Character classes spelled as ranges: a class repeat is linear, where a
+  ## `*( !x ANY )` repeat with a lookahead the engine cannot scan builds its
+  ## tree one character at a time (quadratic on a long tilde run).
   ## Not "~" and not a JS space.
   er_diagram_plain_char = %x00-08 / %x0E-1F / %x21-7D / %x7F-9F / %xA1-167F / %x1681-1FFF / %x200B-2027 / %x202A-202E / %x2030-205E / %x2060-2FFF / %x3001-FEFE / %xFF00-10FFFF
 
@@ -384,12 +438,9 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## Not "~" and not a line terminator.
   er_diagram_tilde_body_char = %x00-09 / %x0B-0C / %x0E-7D / %x7F-2027 / %x202A-10FFFF
 
-  ## Not a double quote.
-  er_diagram_note_char = %x00-21 / %x23-10FFFF
-
   er_diagram_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
 
-  er_diagram_entity_name = %x22 1*( !%x22 ANY ) %x22 / 1*DIGIT "." 1*DIGIT / 1*DIGIT / ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "-" )
+  er_diagram_entity_name = %x22 1*( !( "\"" ) ANY ) %x22 / 1*DIGIT "." 1*DIGIT / 1*DIGIT / ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" / "-" )
 
   er_diagram_class_name_list = er_diagram_identifier *( "," [sp] er_diagram_identifier )
 
@@ -413,7 +464,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   er_diagram_attribute = [ er_diagram_attribute_type ] as type *sp er_diagram_identifier as name *sp [ er_diagram_key_list ] as key [ *sp er_diagram_note as note ] [ *sp comment ]
 
-  er_diagram_note = %x22 *er_diagram_note_char as string %x22
+  er_diagram_note = %x22 *( !( "\"" ) ANY ) as string %x22
 
   er_diagram_attribute_type = er_diagram_tilde_type / er_diagram_identifier
 
@@ -482,11 +533,11 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_acc_gap = *flowchart_ls *( newline *( flowchart_ls / newline / comment ) )
 
-  flowchart_acc_line = ( "accTitle" / "accDescr" ) as acc_keyword flowchart_acc_gap ":" flowchart_acc_gap *( !newline ANY ) as acc_text ( newline / eof )
+  flowchart_acc_line = ( "accTitle" / "accDescr" ) as acc_keyword flowchart_acc_gap ":" flowchart_acc_gap *( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY ) as acc_text ( newline / eof )
 
-  flowchart_comment_line = newline *flowchart_ls "%%" *( !newline ANY )
+  flowchart_comment_line = newline *flowchart_ls "%%" *( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY )
 
-  flowchart_acc_block_body = *( flowchart_comment_line / ( !"}" ANY ) )
+  flowchart_acc_block_body = *( flowchart_comment_line / 1*( !( "\n" / "\r" / "}" ) ANY ) / n_7D )
 
   flowchart_acc_descr_block = "accDescr" as acc_keyword flowchart_acc_gap "{" flowchart_acc_block_body as acc_text [ "}" *flowchart_ls [";"] ]
 
@@ -515,9 +566,10 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## printable ASCII but not ; : , " % ( ) < = > @ [ ] ^ { | } ~ . - # & * 0-9
   flowchart_id_ascii_char = %x21 / %x24 / %x27 / %x2B / %x2F / %x3F / %x41-5A / %x5C / %x5F-7A
 
-  flowchart_id_carry_char = "#" / "&" / "*" / DIGIT
+  flowchart_id_carry_char = DIGIT / "#" / "&" / "*"
 
-  flowchart_id_restart_char = flowchart_unicode_letter
+  ## The look-ahead keeps an ASCII character from walking the whole letter table.
+  flowchart_id_restart_char = &%x80-10FFFF ( %x00D8-00F6 / %x00C0-00D6 / %x00F8-02C1 / flowchart_unicode_letter )
 
   flowchart_id_char = flowchart_id_ascii_char / flowchart_id_carry_char / flowchart_id_restart_char
 
@@ -529,7 +581,17 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_entity_escape = "#" 1*( ALPHA / DIGIT / "_" ) ";"
 
-  flowchart_id_run = 1*( !flowchart_entity_escape flowchart_id_body )
+  ## The printable ASCII id characters other than "-" and "#", which need a
+  ## look-ahead of their own: one literal-look-ahead scan, so a long run costs
+  ## one pass instead of one failed alternative per character.
+  flowchart_id_ascii_span = 1*( !( ";" / ":" / "," / "\"" / "%" / "(" / ")" / "<" / "=" / ">" / "@" / "[" / "]" / "^" / "{" / "|" / "}" / "~" / "-" / "#" ) %x21-7E )
+
+  ## The same, with "#" taken as it stands (the carry the lexer restart models use).
+  flowchart_id_carry_span = 1*( !( ";" / ":" / "," / "\"" / "%" / "(" / ")" / "<" / "=" / ">" / "@" / "[" / "]" / "^" / "{" / "|" / "}" / "~" / "-" ) %x21-7E )
+
+  flowchart_id_hash = !flowchart_entity_escape "#"
+
+  flowchart_id_run = 1*( flowchart_id_ascii_span / flowchart_id_hash / flowchart_id_hyphen / flowchart_id_restart_char )
 
   flowchart_arrowhead_open = ( "x" / "o" ) ["-"] 1*"." "-" [ "x" / "o" / ">" ]
 
@@ -537,7 +599,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_settled_char = flowchart_id_dot / flowchart_id_hyphen / flowchart_id_ascii_char
 
-  flowchart_settled_run = flowchart_settled_char *( flowchart_settled_char / flowchart_id_carry_char )
+  flowchart_settled_run = flowchart_settled_char *( flowchart_id_carry_span / flowchart_id_hyphen )
 
   flowchart_restart_run = 1*( flowchart_id_carry_char / flowchart_id_restart_char )
 
@@ -574,7 +636,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_subgraph_name_word = !flowchart_bare_subgraph_end !flowchart_restart_subgraph_keyword !flowchart_dot_run_before_link !flowchart_restart_arrowhead_open flowchart_id_run
 
-  flowchart_subgraph_quoted_name = %x22 1*( !%x22 ANY ) as string %x22
+  flowchart_subgraph_quoted_name = %x22 1*( !( "\"" ) ANY ) as string %x22
 
   flowchart_subgraph_id = flowchart_subgraph_quoted_name / ( %x22 %x22 *sp flowchart_subgraph_name_word ) / flowchart_subgraph_name_word
 
@@ -584,7 +646,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_bracketed_title = flowchart_bracket_title flowchart_bracket_title_end
 
-  flowchart_comment_word = "%%" *( !newline ANY )
+  flowchart_comment_word = "%%" *( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY )
 
   flowchart_title_run = flowchart_comment_word / flowchart_subgraph_name_word
 
@@ -627,16 +689,16 @@ grammar Mermaid version "0.1.0" edition 2 {
   flowchart_hash_terminated_space = 1*sp ( "#" / !( newline / eof ) )
 
   ## declaration_run(*guards), one rule per guard set
-  flowchart_run = 1*( !";" !newline !sp ANY ) / flowchart_declaration_space
+  flowchart_run = 1*( 1*( !( "\t" / "\n" / "\r" / " " / ";" ) ANY ) / !";" !newline !sp ANY ) / flowchart_declaration_space
 
-  flowchart_run_hcg = 1*( !flowchart_hashed_comma_gap !";" !newline !sp ANY ) / flowchart_declaration_space
+  flowchart_run_hcg = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "," / ";" ) ANY ) / !flowchart_hashed_comma_gap !";" !newline !sp ANY ) / flowchart_declaration_space
 
-  flowchart_run_st = 1*( !flowchart_structural_token !";" !newline !sp ANY ) / flowchart_declaration_space
+  flowchart_run_st = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "(" / ")" / "-" / ":" / ";" / "<" / "=" / ">" / "@" / "[" / "]" / "^" / "{" / "|" / "}" / "~" ) ANY ) / !flowchart_structural_token !";" !newline !sp ANY ) / flowchart_declaration_space
 
   ## hash_terminated_run(*guards)
-  flowchart_hash_run = 1*( !"#" !";" !newline !sp ANY ) / flowchart_hash_terminated_space
+  flowchart_hash_run = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "#" / ";" ) ANY ) / !"#" !";" !newline !sp ANY ) / flowchart_hash_terminated_space
 
-  flowchart_hash_run_cg = 1*( !flowchart_comma_gap !"#" !";" !newline !sp ANY ) / flowchart_hash_terminated_space
+  flowchart_hash_run_cg = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "#" / "," / ";" ) ANY ) / !flowchart_comma_gap !"#" !";" !newline !sp ANY ) / flowchart_hash_terminated_space
 
   flowchart_hashed_comma_gap_scan = *flowchart_run_hcg flowchart_hashed_comma_gap
 
@@ -668,21 +730,21 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_link_style_targets = "default" / ( flowchart_link_index *( "," flowchart_link_index ) )
 
-  flowchart_link_curve_char = !flowchart_ls !newline !";" ANY
+  flowchart_link_curve_char = n_09_0A_0B_0C_0D_20_3B_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF / ( %x0D !%x0A )
 
-  flowchart_link_style_props = ( "interpolate" flowchart_ls 1*flowchart_link_curve_char as link_curve [ 1*flowchart_ls flowchart_style_property_list as link_props ] ) / ( flowchart_style_property_list as link_props )
+  flowchart_link_style_props = ( "interpolate" flowchart_ls 1*( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / ";" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_link_curve_char ) as link_curve [ 1*flowchart_ls flowchart_style_property_list as link_props ] ) / ( flowchart_style_property_list as link_props )
 
   flowchart_link_style_statement = "linkStyle" as link_style_keyword flowchart_ls flowchart_link_style_targets as link_targets flowchart_ls flowchart_link_style_props flowchart_statement_end as link_end
 
   ## --- click ----------------------------------------------------------
 
-  flowchart_quoted_run = %x22 1*( !%x22 ANY ) %x22
+  flowchart_quoted_run = %x22 1*( !( "\"" ) ANY ) %x22
 
   flowchart_link_target = ( "_parent" / "_blank" / "_self" / "_top" ) flowchart_word_boundary
 
   flowchart_callback_gap = 1*( sp / newline / comment )
 
-  flowchart_callback_name = 1*( !"(" !flowchart_line_end ANY )
+  flowchart_callback_name = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "(" / ";" ) ANY ) / !"(" !flowchart_line_end ANY )
 
   flowchart_callback_action = "call" flowchart_callback_gap flowchart_callback_name [flowchart_callback_gap] "(" *( !")" ANY ) ")" [ sp flowchart_quoted_run ]
 
@@ -692,23 +754,23 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_link_action = flowchart_quoted_run flowchart_link_tail
 
-  flowchart_token_char = !sp !flowchart_line_end !";" !flowchart_structural_token ANY
+  flowchart_token_char = n_09_0A_0D_20_28_29_2D_3A_3B_3C_3D_3E_40_5B_5D_5E_7B_7C_7D_7E / ( !sp !flowchart_line_end !";" !flowchart_structural_token ANY )
 
-  flowchart_bare_token = !flowchart_reserved_keyword !%x22 flowchart_token_char *flowchart_token_char
+  flowchart_bare_token = !flowchart_reserved_keyword !%x22 1*( 1*( !( "\t" / "\n" / "\r" / " " / "(" / ")" / "-" / ":" / ";" / "<" / "=" / ">" / "@" / "[" / "]" / "^" / "{" / "|" / "}" / "~" ) ANY ) / flowchart_token_char )
 
   flowchart_callback_name_action = flowchart_bare_token [ sp flowchart_quoted_run ]
 
   flowchart_click_action = flowchart_callback_action / flowchart_href_action / flowchart_link_action / flowchart_callback_name_action
 
-  flowchart_click_target = !%x22 1*( !( sp / newline ) ANY )
+  flowchart_click_target = !%x22 1*( 1*( !( "\t" / "\n" / "\r" / " " ) ANY ) / !( sp / newline ) ANY )
 
   flowchart_click_statement = "click" as click_keyword 1*sp flowchart_click_target as click_target ( sp flowchart_click_action as click_action ) flowchart_statement_end
 
   ## --- node shapes ----------------------------------------------------
 
-  flowchart_inline_comment_line = newline *flowchart_ls "%%" !"{" *( !newline ANY )
+  flowchart_inline_comment_line = newline *flowchart_ls "%%" !"{" *( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY )
 
-  flowchart_quoted_label = %x22 *( flowchart_inline_comment_line / ( !"%%{" !%x22 ANY ) ) %x22
+  flowchart_quoted_label = %x22 *( flowchart_inline_comment_line / 1*( !( "\n" / "\r" / "\"" / "%" ) ANY ) / n_22_25 / ( !"%%{" "%" ) ) %x22
 
   flowchart_shape_triple_circle = "(((" as open *( !")))" ANY ) as label ")))" as close
 
@@ -724,17 +786,17 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_shape_parallelogram = "[/" as open *( !"/]" ANY ) as label "/]" as close
 
-  flowchart_shape_parallelogram_alt = ( "[" %x5C ) as open *( !( %x5C "]" ) ANY ) as label ( %x5C "]" ) as close
+  flowchart_shape_parallelogram_alt = ( "[" %x5C ) as open *( 1*( !( "\\" ) ANY ) / !( %x5C "]" ) ANY ) as label ( %x5C "]" ) as close
 
-  flowchart_shape_trapezoid = "[/" as open *( !( %x5C "]" ) ANY ) as label ( %x5C "]" ) as close
+  flowchart_shape_trapezoid = "[/" as open *( 1*( !( "\\" ) ANY ) / !( %x5C "]" ) ANY ) as label ( %x5C "]" ) as close
 
   flowchart_shape_trapezoid_alt = ( "[" %x5C ) as open *( !"/]" ANY ) as label "/]" as close
 
   flowchart_shape_asymmetric = ">" as open *( !"]" ANY ) as label "]" as close
 
-  flowchart_shape_rectangle = "[" as open *( flowchart_quoted_label / ( !( "]" / ")" ) ANY ) ) as label "]" as close
+  flowchart_shape_rectangle = "[" as open *( flowchart_quoted_label / 1*( !( "\"" / ")" / "]" ) ANY ) / n_29_5D ) as label "]" as close
 
-  flowchart_shape_rounded = "(" as open *( flowchart_quoted_label / flowchart_inline_comment_line / ( !( ")" / %x22 ) ANY ) ) as label ")" as close
+  flowchart_shape_rounded = "(" as open *( flowchart_quoted_label / flowchart_inline_comment_line / 1*( !( "\n" / "\r" / "\"" / ")" ) ANY ) / n_22_29 ) as label ")" as close
 
   flowchart_shape_rhombus = "{" as open *( !"}" ANY ) as label "}" as close
 
@@ -742,11 +804,11 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   ## --- nodes ----------------------------------------------------------
 
-  flowchart_metadata_comment_line = newline *flowchart_ls "%%" !"{" 1*( !newline ANY )
+  flowchart_metadata_comment_line = newline *flowchart_ls "%%" !"{" 1*( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY )
 
-  flowchart_metadata_quoted = %x22 *( flowchart_metadata_comment_line / ( !%x22 ANY ) ) %x22
+  flowchart_metadata_quoted = %x22 *( flowchart_metadata_comment_line / 1*( !( "\n" / "\r" / "\"" ) ANY ) / n_22 ) %x22
 
-  flowchart_metadata_body = *( flowchart_metadata_comment_line / flowchart_metadata_quoted / ( !( %x22 / "}" / "^" ) ANY ) )
+  flowchart_metadata_body = *( flowchart_metadata_comment_line / flowchart_metadata_quoted / 1*( !( "\n" / "\r" / "\"" / "^" / "}" ) ANY ) / n_22_5E_7D )
 
   flowchart_node_metadata = "@{" flowchart_metadata_body as body "}" !( 1*flowchart_ls flowchart_edge_id_ahead )
 
@@ -794,11 +856,11 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_dotted_closing = [flowchart_link_start] flowchart_dotted_close
 
-  flowchart_solid_char = !"--" !flowchart_solid_closing !flowchart_inline_blank !%x22 !"%%{" ANY
+  flowchart_solid_char = n_09_0A_0B_0C_0D_20_22_25_2D_3C_6F_78_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF / ( !"--" !flowchart_solid_closing !flowchart_inline_blank !%x22 !"%%{" ANY )
 
-  flowchart_thick_char = !"=" !flowchart_thick_closing !flowchart_inline_blank !%x22 !"%%{" ANY
+  flowchart_thick_char = n_09_0A_0B_0C_0D_20_22_25_3C_3D_6F_78_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF / ( !"=" !flowchart_thick_closing !flowchart_inline_blank !%x22 !"%%{" ANY )
 
-  flowchart_dotted_char = !"." !flowchart_dotted_closing !flowchart_inline_blank !%x22 !"%%{" ANY
+  flowchart_dotted_char = n_09_0A_0B_0C_0D_20_22_25_2D_2E_3C_6F_78_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF / ( !"." !flowchart_dotted_closing !flowchart_inline_blank !%x22 !"%%{" ANY )
 
   flowchart_solid_gap = 1*flowchart_inline_blank !flowchart_solid_closing
 
@@ -806,11 +868,11 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   flowchart_dotted_gap = 1*flowchart_inline_blank !flowchart_dotted_closing
 
-  flowchart_solid_label = ( flowchart_quoted_label *( flowchart_solid_char / flowchart_solid_gap ) ) / ( flowchart_solid_char *( flowchart_solid_char / flowchart_solid_gap ) )
+  flowchart_solid_label = ( flowchart_quoted_label *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "%" / "-" / "<" / "o" / "x" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_solid_char / flowchart_solid_gap ) ) / ( flowchart_solid_char *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "%" / "-" / "<" / "o" / "x" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_solid_char / flowchart_solid_gap ) )
 
-  flowchart_thick_label = ( flowchart_quoted_label *( flowchart_thick_char / flowchart_thick_gap ) ) / ( flowchart_thick_char *( flowchart_thick_char / flowchart_thick_gap ) )
+  flowchart_thick_label = ( flowchart_quoted_label *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "%" / "<" / "=" / "o" / "x" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_thick_char / flowchart_thick_gap ) ) / ( flowchart_thick_char *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "%" / "<" / "=" / "o" / "x" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_thick_char / flowchart_thick_gap ) )
 
-  flowchart_dotted_label = ( flowchart_quoted_label *( flowchart_dotted_char / flowchart_dotted_gap ) ) / ( flowchart_dotted_char *( flowchart_dotted_char / flowchart_dotted_gap ) )
+  flowchart_dotted_label = ( flowchart_quoted_label *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "%" / "-" / "." / "<" / "o" / "x" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_dotted_char / flowchart_dotted_gap ) ) / ( flowchart_dotted_char *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "%" / "-" / "." / "<" / "o" / "x" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_dotted_char / flowchart_dotted_gap ) )
 
   flowchart_inline_solid = ( [flowchart_link_start] "--" ) as open *flowchart_inline_blank flowchart_solid_label as label *flowchart_inline_blank flowchart_solid_closing as close
 
@@ -824,17 +886,17 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   ## Edge ids: only an id without a further "@" in its run, which is the
   ## case where Parslet's last-"@" search ends at the first one.
-  flowchart_edge_id_char = !( "@" / flowchart_ls / newline / %x22 ) ANY
+  flowchart_edge_id_char = n_09_0A_0B_0C_0D_20_22_40_A0_1680_2000T200A_2028_2029_202F_205F_3000_FEFF / ( %x0D !%x0A )
 
   flowchart_edge_id_link_start = [ "x" / "o" / "<" ] ( "--" / "==" / "-." / ( 1*"." "-" ) / "~~~" )
 
   flowchart_link_opener = [ "x" / "o" / "<" ] ( "-" / "=" / "." / "~~~" )
 
-  flowchart_edge_id_ahead = &( !flowchart_edge_id_link_start 1*flowchart_edge_id_char "@" !( *flowchart_edge_id_char "@" ) flowchart_acc_gap flowchart_link_opener )
+  flowchart_edge_id_ahead = &( !flowchart_edge_id_link_start 1*( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "@" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_edge_id_char ) "@" !( *( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "@" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_edge_id_char ) "@" ) flowchart_acc_gap flowchart_link_opener )
 
   flowchart_edge_id_preempted = flowchart_reserved_word / ( "default" flowchart_word_boundary ) / ( "accTitle" ":" ) / ( "accDescr" ( ":" / "{" ) )
 
-  flowchart_edge_id_body = 1*flowchart_edge_id_char as edge_id "@" flowchart_acc_gap
+  flowchart_edge_id_body = 1*( 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "\"" / "@" / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / " " / "　" / "﻿" ) ANY ) / flowchart_edge_id_char ) as edge_id "@" flowchart_acc_gap
 
   flowchart_edge = ( ( 1*flowchart_ls !flowchart_edge_id_preempted flowchart_edge_id_ahead flowchart_edge_id_body ) / ws ) ( flowchart_piped_edge / flowchart_inline_label_edge ) ws !flowchart_reserved_keyword flowchart_node_with_shape as target flowchart_amp_group as group
 
@@ -867,7 +929,7 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## gantt (grammars/gantt.rb)
   ## ------------------------------------------------------------------
 
-  gantt_text = 1*( !line_end ANY )
+  gantt_text = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY )
 
   gantt_title = "title" 1*sp gantt_text as title line_end
 
@@ -901,9 +963,9 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   gantt_click = "click" 1*sp gantt_identifier as click_id 1*sp ( gantt_click_href / gantt_click_callback ) line_end
 
-  gantt_description = 1*( !":" !line_end ANY )
+  gantt_description = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ":" / ";" ) ANY ) / le_mid / !":" !line_end ANY )
 
-  gantt_field = 1*( !"," !line_end ANY )
+  gantt_field = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / "," / ";" ) ANY ) / le_mid / !"," !line_end ANY )
 
   gantt_details = gantt_field as field *( *sp "," *sp gantt_field as field )
 
@@ -927,29 +989,27 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## gitgraph (grammars/git_graph.rb)
   ## ------------------------------------------------------------------
 
-  gitgraph_nonspace = !( sp / %x0A / %x0D / %x0B / %x0C / "," ) ANY
+  gitgraph_plain_id = %x22 1*( !( "\"" ) ANY ) as id %x22 / "'" 1*( !"'" ANY ) as id "'" / 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "," ) ANY ) as id
 
-  gitgraph_plain_id = %x22 1*( !%x22 ANY ) as id %x22 / "'" 1*( !"'" ANY ) as id "'" / 1*gitgraph_nonspace as id
+  gitgraph_plain_tag = %x22 1*( !( "\"" ) ANY ) as tag %x22 / "'" 1*( !"'" ANY ) as tag "'" / 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "," ) ANY ) as tag
 
-  gitgraph_plain_tag = %x22 1*( !%x22 ANY ) as tag %x22 / "'" 1*( !"'" ANY ) as tag "'" / 1*gitgraph_nonspace as tag
-
-  gitgraph_plain_parent = %x22 1*( !%x22 ANY ) as parent %x22 / "'" 1*( !"'" ANY ) as parent "'" / 1*gitgraph_nonspace as parent
+  gitgraph_plain_parent = %x22 1*( !( "\"" ) ANY ) as parent %x22 / "'" 1*( !"'" ANY ) as parent "'" / 1*( !( "\t" / "\n" / "" / "" / "\r" / " " / "," ) ANY ) as parent
 
   gitgraph_break = %x0A / %x0D / %x2028 / %x2029
 
   gitgraph_escape = "\\" !gitgraph_break ANY
 
-  gitgraph_dq_message = %x22 *( gitgraph_escape / !( %x22 / "\\" ) ANY ) as message %x22
+  gitgraph_dq_message = %x22 *( gitgraph_escape / 1*( !( "\"" / "\\" ) ANY ) ) as message %x22
 
-  gitgraph_sq_message = "'" *( gitgraph_escape / !( "'" / "\\" ) ANY ) as message "'"
+  gitgraph_sq_message = "'" *( gitgraph_escape / 1*( !( "'" / "\\" ) ANY ) ) as message "'"
 
-  gitgraph_dq_name = %x22 *( gitgraph_escape / !( %x22 / "\\" ) ANY ) as name %x22
+  gitgraph_dq_name = %x22 *( gitgraph_escape / 1*( !( "\"" / "\\" ) ANY ) ) as name %x22
 
-  gitgraph_sq_name = "'" *( gitgraph_escape / !( "'" / "\\" ) ANY ) as name "'"
+  gitgraph_sq_name = "'" *( gitgraph_escape / 1*( !( "'" / "\\" ) ANY ) ) as name "'"
 
-  gitgraph_dq_branch = %x22 *( gitgraph_escape / !( %x22 / "\\" ) ANY ) as branch %x22
+  gitgraph_dq_branch = %x22 *( gitgraph_escape / 1*( !( "\"" / "\\" ) ANY ) ) as branch %x22
 
-  gitgraph_sq_branch = "'" *( gitgraph_escape / !( "'" / "\\" ) ANY ) as branch "'"
+  gitgraph_sq_branch = "'" *( gitgraph_escape / 1*( !( "'" / "\\" ) ANY ) ) as branch "'"
 
   gitgraph_word = ALPHA / DIGIT / "_"
 
@@ -991,7 +1051,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   gitgraph_switch = gitgraph_switch_body as switch line_end
 
-  gitgraph_quoted = %x22 *( !%x22 ANY ) %x22 / "'" *( !"'" ANY ) "'"
+  gitgraph_quoted = %x22 *( !( "\"" ) ANY ) %x22 / "'" *( !"'" ANY ) "'"
 
   gitgraph_merge_option = gitgraph_commit_id / gitgraph_commit_type / gitgraph_commit_tag / "random:" gitgraph_quoted
 
@@ -1124,11 +1184,11 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   kanban_empty_quoted_fragments = *( "\"``\"" / "\"\"" )
 
-  kanban_markdown_body = "`" *( !%x22 !"`" ANY ) "`" %x22
+  kanban_markdown_body = "`" *( !( "\"" / "`" ) ANY ) "`" %x22
 
-  kanban_labelled_text = kanban_empty_quoted_fragments ( %x22 !kanban_markdown_body 1*( !%x22 ANY ) as text %x22 / !( %x22 kanban_markdown_body ) 1*( !"]" ANY ) as text ) kanban_empty_quoted_fragments
+  kanban_labelled_text = kanban_empty_quoted_fragments ( %x22 !kanban_markdown_body 1*( !( "\"" ) ANY ) as text %x22 / !( %x22 kanban_markdown_body ) 1*( !"]" ANY ) as text ) kanban_empty_quoted_fragments
 
-  kanban_round_text = kanban_empty_quoted_fragments ( %x22 !kanban_markdown_body 1*( !%x22 ANY ) as text %x22 / !%x22 1*( !"(" !")" !"]" !"}" ANY ) as text ) kanban_empty_quoted_fragments
+  kanban_round_text = kanban_empty_quoted_fragments ( %x22 !kanban_markdown_body 1*( !( "\"" ) ANY ) as text %x22 / !%x22 1*( !( "(" / ")" / "]" / "}" ) ANY ) as text ) kanban_empty_quoted_fragments
 
   kanban_labelled_item = kanban_identifier as id "[" kanban_labelled_text "]"
 
@@ -1175,7 +1235,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   mindmap_icon = "::icon(" 1*( !")" ANY ) as icon ")"
 
-  mindmap_class = ":::" 1*( !%x0D !%x0A ANY ) as classes
+  mindmap_class = ":::" 1*( !( "\n" / "\r" ) ANY ) as classes
 
   mindmap_circle = "((" 1*( !")" ANY ) as content "))" "" as shape_circle
 
@@ -1185,21 +1245,21 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   mindmap_hexagon = "{{" 1*( !"}" ANY ) as content "}}" "" as shape_hexagon
 
-  mindmap_square = "[" ( %x22 1*( !%x22 ANY ) as content %x22 / 1*( !"]" ANY ) as content ) "]" "" as shape_square
+  mindmap_square = "[" ( %x22 1*( !( "\"" ) ANY ) as content %x22 / 1*( !"]" ANY ) as content ) "]" "" as shape_square
 
-  mindmap_round_comment_line = newline *mindmap_comment_indent "%%" !"{" *( !%x0D !%x0A ANY ) [newline]
+  mindmap_round_comment_line = newline *mindmap_comment_indent "%%" !"{" *( !( "\n" / "\r" ) ANY ) [newline]
 
-  mindmap_round_unquoted = 1*( mindmap_round_comment_line / !")" ANY ) as content
+  mindmap_round_unquoted = 1*( mindmap_round_comment_line / 1*( !( "\n" / "\r" / ")" ) ANY ) / n_29 ) as content
 
-  mindmap_round_quoted = 1*( mindmap_round_comment_line / !%x22 ANY ) as content
+  mindmap_round_quoted = 1*( mindmap_round_comment_line / 1*( !( "\n" / "\r" / "\"" ) ANY ) / n_22 ) as content
 
   mindmap_round = "(" ( %x22 mindmap_round_quoted %x22 "" as round_quoted / mindmap_round_unquoted ) ")" "" as shape_round
 
   mindmap_shaped = *mindmap_word_char ( mindmap_circle / mindmap_bang / mindmap_cloud / mindmap_hexagon / mindmap_square / mindmap_round )
 
-  mindmap_unterminated_opener = *( !%x0D !%x0A !"(" !"[" ANY ) ( "(" / "[" ) *( !%x0D !%x0A !")" !"]" ANY ) ( newline / eof )
+  mindmap_unterminated_opener = *( !( "\n" / "\r" / "(" / "[" ) ANY ) ( "(" / "[" ) *( !( "\n" / "\r" / ")" / "]" ) ANY ) ( newline / eof )
 
-  mindmap_plain = !mindmap_unterminated_opener 1*( !%x0D !%x0A !":" ANY ) as content
+  mindmap_plain = !mindmap_unterminated_opener 1*( !( "\n" / "\r" / ":" ) ANY ) as content
 
   mindmap_node = mindmap_icon / mindmap_class / mindmap_shaped / mindmap_plain
 
@@ -1220,7 +1280,7 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## packet (grammars/packet.rb)
   ## ------------------------------------------------------------------
 
-  packet_text = 1*( !%x0A ANY )
+  packet_text = 1*( !( "\n" ) ANY )
 
   packet_title_line = "title" sp packet_text as title newline
 
@@ -1228,7 +1288,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   packet_bit_range = packet_bit as bit_start [ "-" packet_bit as bit_end ]
 
-  packet_label = %x22 *( "\\" ANY / !( %x22 / "\\" ) ANY ) as label %x22
+  packet_label = %x22 *( "\\" ANY / 1*( !( "\"" / "\\" ) ANY ) ) as label %x22
 
   packet_field_line = packet_bit_range ":" *sp packet_label ( newline / eof )
 
@@ -1253,7 +1313,7 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## pie (grammars/pie.rb)
   ## ------------------------------------------------------------------
 
-  pie_title_text = *( !line_end ANY )
+  pie_title_text = *( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY )
 
   pie_title = "title" ( ":" / 1*sp ) pie_title_text as text
 
@@ -1290,7 +1350,7 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## quadrant (grammars/quadrant.rb)
   ## ------------------------------------------------------------------
 
-  quadrant_text = 1*( !line_end ANY )
+  quadrant_text = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY )
 
   quadrant_name = 1*( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
 
@@ -1300,7 +1360,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   quadrant_title = "title" 1*sp quadrant_text as title line_end
 
-  quadrant_axis_label = dq_string / 1*( !"-->" !line_end ANY )
+  quadrant_axis_label = dq_string / 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / "-" / ";" ) ANY ) / le_mid / !"-->" !line_end ANY )
 
   quadrant_x_axis = "x-axis" 1*sp quadrant_axis_label as x_axis_left *sp "-->" *sp quadrant_axis_label as x_axis_right line_end
 
@@ -1308,7 +1368,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   quadrant_label_line = "quadrant-" %x31-34 as quadrant_number 1*sp quadrant_text as quadrant_label line_end
 
-  quadrant_class_def = "classDef" 1*sp quadrant_name as class_name 1*sp *( !line_end ANY ) as class_style line_end
+  quadrant_class_def = "classDef" 1*sp quadrant_name as class_name 1*sp *( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY ) as class_style line_end
 
   quadrant_color = "#" 3*8( DIGIT / %x61-66 / %x41-46 ) / 1*ALPHA
 
@@ -1318,7 +1378,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   quadrant_coordinates = "[" *sp quadrant_float as x *sp "," *sp quadrant_float as y *sp "]"
 
-  quadrant_point = 1*( !":::" !":" ANY ) as label [ ":::" quadrant_name ] *sp ":" *sp quadrant_coordinates as coordinates quadrant_styling as styling line_end as data_point
+  quadrant_point = 1*( !( ":" ) ANY ) as label [ ":::" quadrant_name ] *sp ":" *sp quadrant_coordinates as coordinates quadrant_styling as styling line_end as data_point
 
   quadrant_statement = quadrant_title / quadrant_x_axis / quadrant_y_axis / quadrant_label_line / quadrant_class_def / quadrant_point / comment line_end
 
@@ -1336,11 +1396,11 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## radar (grammars/radar.rb)
   ## ------------------------------------------------------------------
 
-  radar_text = 1*( !newline ANY )
+  radar_text = 1*( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY )
 
   radar_id = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
 
-  radar_label = "[" %x22 1*( !%x22 ANY ) as label %x22 "]"
+  radar_label = "[" %x22 1*( !( "\"" ) ANY ) as label %x22 "]"
 
   radar_title = "title" sp radar_text as title line_end
 
@@ -1389,15 +1449,15 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   requirement_identifier = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )
 
-  requirement_acc_title = "accTitle" *requirement_js_space ":" *requirement_js_space 1*( !newline ANY ) as acc_title ( newline / eof )
+  requirement_acc_title = "accTitle" *requirement_js_space ":" *requirement_js_space 1*( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY ) as acc_title ( newline / eof )
 
-  requirement_acc_descr_single = "accDescr" *requirement_js_space ":" *requirement_js_space 1*( !newline ANY ) as acc_descr ( newline / eof )
+  requirement_acc_descr_single = "accDescr" *requirement_js_space ":" *requirement_js_space 1*( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY ) as acc_descr ( newline / eof )
 
   requirement_acc_descr_multi = "accDescr" *requirement_js_space "{" *requirement_js_space *( !"}" ANY ) as acc_descr "}"
 
   requirement_property_key = ( "id" / "text" / "risk" / "verifymethod" / "type" / "docref" ) as prop_key
 
-  requirement_property_value = 1*( !requirement_line_end ANY )
+  requirement_property_value = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" ) ANY ) / le_mid / !requirement_line_end ANY )
 
   requirement_property = requirement_property_key as key ws ":" ws requirement_property_value as value requirement_line_end
 
@@ -1419,7 +1479,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   requirement_style_targets = requirement_identifier *( "," ws requirement_identifier )
 
-  requirement_style_property = 1*( !requirement_line_end !"," ANY )
+  requirement_style_property = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / "," ) ANY ) / le_mid / !requirement_line_end !"," ANY )
 
   requirement_style_properties = requirement_style_property *( "," requirement_style_property )
 
@@ -1505,9 +1565,9 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   sequence_rest_of_line = *sequence_not_lf line_end
 
-  sequence_comment_statement = "%" !"{" *( !line_end ANY ) line_end
+  sequence_comment_statement = "%" !"{" *( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY ) line_end
 
-  sequence_hash_comment_statement = !sequence_char_ref "#" *( !line_end ANY ) line_end
+  sequence_hash_comment_statement = !sequence_char_ref "#" *( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / !line_end ANY ) line_end
 
   sequence_title_statement = "title" ( ":" *sp / 1*sp ) *sequence_title_char sequence_boundary
 
@@ -1555,15 +1615,15 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   sequence_declaration_stop = "<" / ">" / ":" / "," / ";" / "%%" / "@" / newline
 
-  sequence_declaration_char = !sequence_declaration_stop ANY
+  sequence_declaration_char = n_0A_0D_25_2C_3A_3B_3C_3E_40 / ( "%" !"%" ) / ( %x0D !%x0A )
 
   sequence_declaration_lead = sequence_char_ref / ( !"#" sequence_declaration_char )
 
-  sequence_declaration_word_char = !( sequence_declaration_stop / sp ) ANY
+  sequence_declaration_word_char = n_09_0A_0D_20_25_2C_3A_3B_3C_3E_40 / ( "%" !"%" ) / ( %x0D !%x0A )
 
   sequence_declaration_word_lead = sequence_char_ref / ( !"#" sequence_declaration_word_char )
 
-  sequence_declaration_name = ( sequence_declaration_word_lead *( sequence_char_ref / sequence_declaration_word_char ) &sequence_alias_keyword ) / ( sequence_declaration_lead *( sequence_char_ref / sequence_declaration_char ) )
+  sequence_declaration_name = ( sequence_declaration_word_lead *( sequence_char_ref / 1*( !( "\t" / "\n" / "\r" / " " / "#" / "%" / "," / ":" / ";" / "<" / ">" / "@" ) ANY ) / sequence_declaration_word_char ) &sequence_alias_keyword ) / ( sequence_declaration_lead *( sequence_char_ref / 1*( !( "\n" / "\r" / "#" / "%" / "," / ":" / ";" / "<" / ">" / "@" ) ANY ) / sequence_declaration_char ) )
 
   sequence_message_actor_stop = sequence_arrow_base / ":" / "," / ";" / "%%" / "@{" / "(" / ")" / newline
 
@@ -1591,11 +1651,11 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   ## --- declarations ---------------------------------------------------
 
-  sequence_shape_metadata = "@{" 1*( !"}" !newline ANY ) "}"
+  sequence_shape_metadata = "@{" 1*( 1*( !( "\n" / "\r" / "}" ) ANY ) / !"}" !newline ANY ) "}"
 
   sequence_declaration_identity = sequence_declaration_name as id [ sequence_shape_metadata as shape_metadata ] *sp
 
-  sequence_unquoted_label = 1*( sequence_char_ref / ( !line_end !";" ANY ) )
+  sequence_unquoted_label = 1*( sequence_char_ref / 1*( !( "\t" / "\n" / "\r" / " " / "#" / "%" / ";" ) ANY ) / le_mid / n_09_0A_0D_20_25_3B / ( !line_end !";" ANY ) )
 
   sequence_declaration_label = "as" 1*sp sequence_unquoted_label as label
 
@@ -1674,13 +1734,13 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   state_diagram_name = 1*( ALPHA / DIGIT / "_" )
 
-  state_diagram_line_char = !line_end ANY
+  state_diagram_line_char = n_09_0A_0D_20_25_3B / ( !line_end ANY )
 
   state_diagram_arrow = "-->" as arrow
 
-  state_diagram_quoted_id = %x22 *( "\\" ANY / !%x22 ANY ) %x22 / "'" *( "\\" ANY / !"'" ANY ) "'"
+  state_diagram_quoted_id = %x22 *( "\\" ANY / 1*( !( "\"" / "\\" ) ANY ) ) %x22 / "'" *( "\\" ANY / 1*( !( "'" / "\\" ) ANY ) ) "'"
 
-  state_diagram_label_string = %x22 *( !%x22 ANY ) as string %x22
+  state_diagram_label_string = %x22 *( !( "\"" ) ANY ) as string %x22
 
   state_diagram_id = dq_string / sq_string / state_diagram_name
 
@@ -1698,13 +1758,13 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   state_diagram_empty = "state" as keyword line_end
 
-  state_diagram_marker_target = 1*( !( *sp state_diagram_marker line_end ) state_diagram_line_char )
+  state_diagram_marker_target = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" / "<" ) ANY ) / !( *sp state_diagram_marker line_end ) state_diagram_line_char )
 
   state_diagram_marker_declaration = state_diagram_marker_target as state_id *sp state_diagram_marker as marker
 
   state_diagram_target = !( %x22 %x22 ) state_diagram_label_string as state_label 1*sp "as" 1*sp ( state_diagram_quoted_id / state_diagram_name ) as state_id / state_diagram_id as state_id
 
-  state_diagram_description = ":" *sp 1*( !"{" state_diagram_line_char ) as description
+  state_diagram_description = ":" *sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" / "{" ) ANY ) / le_mid / !"{" state_diagram_line_char ) as description
 
   state_diagram_composite_statements = 1*( state_diagram_composite_statement ws )
 
@@ -1714,21 +1774,21 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   state_diagram_style_targets = state_diagram_name *( "," *sp state_diagram_name )
 
-  state_diagram_style = "style" as style_keyword 1*sp state_diagram_style_targets as style_targets [ 1*sp 1*state_diagram_line_char as style_props ] line_end
+  state_diagram_style = "style" as style_keyword 1*sp state_diagram_style_targets as style_targets [ 1*sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / state_diagram_line_char ) as style_props ] line_end
 
   state_diagram_end = "[*]" / !state_diagram_reserved state_diagram_id
 
-  state_diagram_transition_label = *sp ":" *sp 1*( !"-->" state_diagram_line_char ) as label_text
+  state_diagram_transition_label = *sp ":" *sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / "-" / ";" ) ANY ) / le_mid / !"-->" state_diagram_line_char ) as label_text
 
   state_diagram_transition = state_diagram_end as from *sp state_diagram_arrow *sp state_diagram_end as to [ state_diagram_transition_label as label ] *( *sp state_diagram_arrow *sp state_diagram_end as chain_to ) as chain line_end
 
   state_diagram_note_head = "note" as note_keyword 1*sp ( "left" / "right" ) as position sp "of" 1*sp state_diagram_id as note_target *sp
 
-  state_diagram_note = state_diagram_note_head ":" *sp 1*state_diagram_line_char as note_text line_end
+  state_diagram_note = state_diagram_note_head ":" *sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ";" ) ANY ) / le_mid / state_diagram_line_char ) as note_text line_end
 
   state_diagram_note_end = *sp "end note" line_end
 
-  state_diagram_note_body = *( !state_diagram_note_end *( !newline ANY ) newline )
+  state_diagram_note_body = *( !state_diagram_note_end *( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY ) newline )
 
   state_diagram_note_block = state_diagram_note_head newline state_diagram_note_body as note_text state_diagram_note_end
 
@@ -1736,7 +1796,7 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   state_diagram_description_end = *sp ( newline / eof )
 
-  state_diagram_bare_description = ":" !( newline / eof ) *sp [ 1*( !state_diagram_description_end ANY ) as description ]
+  state_diagram_bare_description = ":" !( newline / eof ) *sp [ 1*( 1*( !( "\t" / "\n" / "\r" / " " ) ANY ) / !state_diagram_description_end ANY ) as description ]
 
   state_diagram_standalone = !state_diagram_reserved state_diagram_id as state_id [ *sp state_diagram_bare_description ] line_end
 
@@ -1769,9 +1829,9 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## ";" has no meaning in mmdc's timeline lexer, so line_end drops it.
   timeline_line_end = *sp ( [comment] newline / eof )
 
-  timeline_rest = *( !timeline_line_end ANY )
+  timeline_rest = *( 1*( !( "\t" / "\n" / "\r" / " " / "%" ) ANY ) / le_mid / !timeline_line_end ANY )
 
-  timeline_title = "title" 1*sp 1*( !timeline_line_end ANY ) as title timeline_line_end
+  timeline_title = "title" 1*sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" ) ANY ) / le_mid / !timeline_line_end ANY ) as title timeline_line_end
 
   timeline_acc_title = "accTitle" *sp ":" *sp timeline_rest as acc_title timeline_line_end
 
@@ -1779,23 +1839,23 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   timeline_acc_descr_multi = "accDescr" *sp "{" ws *( !"}" ANY ) as acc_descr ws "}" timeline_line_end
 
-  timeline_section = "section" 1*sp 1*( !timeline_line_end ANY ) as section timeline_line_end
+  timeline_section = "section" 1*sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" ) ANY ) / le_mid / !timeline_line_end ANY ) as section timeline_line_end
 
   timeline_separator_colon = ":" ( %x20 / %x09 / %x0A / %x0D / %x0C / %x0B )
 
-  timeline_description_char = !timeline_separator_colon !timeline_line_end ANY
+  timeline_description_char = n_09_0A_0D_20_25_3A / ( !timeline_separator_colon !timeline_line_end ANY )
 
-  timeline_description = *sp 1*timeline_description_char *sp
+  timeline_description = *sp 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ":" ) ANY ) / le_mid / timeline_description_char ) *sp
 
   timeline_descriptions = timeline_description as desc *( *sp ":" *sp timeline_description as desc )
 
-  timeline_time = 1*( !":" !timeline_line_end ANY )
+  timeline_time = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ":" ) ANY ) / le_mid / !":" !timeline_line_end ANY )
 
   timeline_event = *sp timeline_time as time *sp ":" timeline_descriptions as descriptions timeline_line_end
 
   timeline_continuation = *sp ":" timeline_descriptions as descriptions timeline_line_end
 
-  timeline_task = 1*( !":" !"section" !"title" !"accTitle" !"accDescr" !timeline_line_end ANY ) as task timeline_line_end
+  timeline_task = 1*( 1*( !( "\t" / "\n" / "\r" / " " / "%" / ":" / "a" / "s" / "t" ) ANY ) / le_mid / !":" !"section" !"title" !"accTitle" !"accDescr" !timeline_line_end ANY ) as task timeline_line_end
 
   timeline_statement = timeline_acc_title / timeline_acc_descr_single / timeline_acc_descr_multi / timeline_title / timeline_section / timeline_event as event_entry / timeline_continuation as continuation_entry / timeline_task / comment timeline_line_end
 
@@ -1813,7 +1873,7 @@ grammar Mermaid version "0.1.0" edition 2 {
   ## treemap (grammars/treemap.rb)
   ## ------------------------------------------------------------------
 
-  treemap_text = 1*( !newline ANY )
+  treemap_text = 1*( 1*( !( "\n" / "\r" ) ANY ) / !newline ANY )
 
   treemap_title = "title" 1*sp treemap_text as title
 
@@ -1853,14 +1913,14 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   user_journey_header = %s"journey" *sp user_journey_end
 
-  user_journey_text = 1*( !%x0A !":" ANY )
+  user_journey_text = 1*( !( "\n" / ":" ) ANY )
 
   user_journey_title = *sp %s"title" 1*sp user_journey_text as text user_journey_end
 
   user_journey_section = *sp %s"section" 1*sp user_journey_text as text user_journey_end
 
   ## accTitle / accDescr match case-insensitively; their text is discarded.
-  user_journey_acc_line = *sp ( %i"accTitle" / %i"accDescr" ) *sp ":" *( !%x0A ANY ) user_journey_end
+  user_journey_acc_line = *sp ( %i"accTitle" / %i"accDescr" ) *sp ":" *( !( "\n" ) ANY ) user_journey_end
 
   user_journey_acc_open = *sp %i"accDescr" *sp "{"
 
@@ -1869,25 +1929,25 @@ grammar Mermaid version "0.1.0" edition 2 {
 
   user_journey_acc_space = %x09 / %x0B / %x0C / %x20 / %xA0 / %x1680 / %x2000-200A / %x202F / %x205F / %x3000 / %xFEFF
 
-  user_journey_acc_directive = user_journey_acc_nl *user_journey_acc_space "%%{" *( !user_journey_acc_nl !"}%%" ANY ) "}%%"
+  user_journey_acc_directive = user_journey_acc_nl *user_journey_acc_space "%%{" *( 1*( !( "\n" / "\r" / "}" / " " / " " ) ANY ) / !user_journey_acc_nl !"}%%" ANY ) "}%%"
 
-  user_journey_acc_comment = user_journey_acc_nl *user_journey_acc_space "%%" !"{" *( !user_journey_acc_nl ANY )
+  user_journey_acc_comment = user_journey_acc_nl *user_journey_acc_space "%%" !"{" *( !( "\n" / "\r" / " " / " " ) ANY )
 
-  user_journey_acc_body = *( 1*( !"}" !user_journey_acc_nl ANY ) / user_journey_acc_directive / user_journey_acc_comment / ( !"}" ANY ) )
+  user_journey_acc_body = *( 1*( !( "\n" / "\r" / "}" / " " / " " ) ANY ) / user_journey_acc_directive / user_journey_acc_comment / n_7D )
 
   user_journey_acc_block = user_journey_acc_open user_journey_acc_body "}"
 
   user_journey_acc_unclosed = user_journey_acc_open user_journey_acc_body !ANY
 
-  user_journey_task_text = 1*( !":" !%x0A ANY )
+  user_journey_task_text = 1*( !( "\n" / ":" ) ANY )
 
-  user_journey_actor = 1*( !"," !%x0A ANY )
+  user_journey_actor = 1*( !( "\n" / "," ) ANY )
 
   user_journey_actors = [ user_journey_actor *( *sp "," *sp user_journey_actor ) ]
 
   user_journey_task = *sp user_journey_task_text as name ":" *sp 1*DIGIT as score [ *sp ":" *sp user_journey_actors as actors ] *sp user_journey_end
 
-  user_journey_comment = *sp "%%" *( !%x0A ANY ) %x0A
+  user_journey_comment = *sp "%%" *( !( "\n" ) ANY ) %x0A
 
   user_journey_blank = *sp %x0A
 

@@ -17,7 +17,9 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-      - run: gem install parsanol -v 1.3.130 --no-document
+      # Compile with the parsanol that built the committed artifact, so the
+      # payload check compares like with like when sirena moves to a new release.
+      - run: gem install parsanol -v "$(ruby -rjson -e 'print JSON.parse(File.read("mermaid.json"))["compiler_version"]')" --no-document
       - name: Grammar tests (embedded accept/reject)
         run: parsanol parg test mermaid.parg
       - name: Compile and verify committed artifact payload
@@ -29,6 +31,9 @@ jobs:
               j.delete("checksum")
               j.delete("compiler_version")
               j.delete("unicode_tables")
+              # byte_checksum hashes the serialized artifact, which embeds the Ruby
+              # build stamp above, so it moves with the Ruby version like checksum.
+              j.delete("byte_checksum")
               j
             end
             a = strip.call("mermaid.json"); b = strip.call("/tmp/fresh.json")
